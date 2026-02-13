@@ -1,0 +1,13 @@
+package:
+    name: pyucis-viewer
+
+    dep-sets:
+    - name: default-dev
+      deps:
+      - name: pyucis
+        url: https://github.com/fvutils/pyucis.git
+      - name: sphinx
+        src: pypi
+    - name: default
+      deps: []
+
