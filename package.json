@@ -9,6 +9,7 @@
     "url": "https://github.com/covsight/vscode-covsight"
   },
   "icon": "media/covsight-icon.png",
+  "license": "Apache-2.0",
   "engines": {
     "vscode": "^1.88.0"
   },
