@@ -1,0 +1,223 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://covsight.github.io/schemas/testplan.schema.json",
+  "title": "CovSight Testplan",
+  "description": "A CovSight verification testplan file",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Name of the testplan"
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable description of this testplan"
+    },
+    "format_version": {
+      "type": "string",
+      "description": "Schema format version, e.g. '1.0'"
+    },
+    "imports": {
+      "type": "array",
+      "description": "Relative paths to other testplan files to import and merge",
+      "items": {
+        "type": "string"
+      }
+    },
+    "goals": {
+      "type": "array",
+      "description": "Top-level verification goals",
+      "items": {
+        "$ref": "#/$defs/Goal"
+      }
+    },
+    "testpoints": {
+      "type": "array",
+      "description": "Top-level testpoints not nested under a goal",
+      "items": {
+        "$ref": "#/$defs/Testpoint"
+      }
+    }
+  },
+  "$defs": {
+    "Status": {
+      "oneOf": [
+        {
+          "const": "planned",
+          "description": "Not yet started"
+        },
+        {
+          "const": "in_progress",
+          "description": "Work is underway"
+        },
+        {
+          "const": "complete",
+          "description": "Testpoint objectives fully met"
+        },
+        {
+          "const": "waived",
+          "description": "Requirement waived; will not be implemented"
+        }
+      ]
+    },
+    "CoverageBindingType": {
+      "oneOf": [
+        {
+          "const": "covergroup",
+          "description": "Target an entire covergroup scope and all its coverpoints"
+        },
+        {
+          "const": "coverpoint",
+          "description": "Target a specific coverpoint within a covergroup"
+        },
+        {
+          "const": "cross",
+          "description": "Target a cross coverage point"
+        },
+        {
+          "const": "assertion",
+          "description": "Target an SVA assertion"
+        },
+        {
+          "const": "toggle",
+          "description": "Target a signal toggle coverage scope"
+        },
+        {
+          "const": "line",
+          "description": "Target statement/line coverage for a source file region"
+        },
+        {
+          "const": "branch",
+          "description": "Target branch/condition coverage"
+        }
+      ]
+    },
+    "Goal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the goal"
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of what this goal covers"
+        },
+        "owner": {
+          "type": "string",
+          "description": "Team or person responsible for this goal"
+        },
+        "status": {
+          "$ref": "#/$defs/Status",
+          "description": "Overall status of the goal"
+        },
+        "goals": {
+          "type": "array",
+          "description": "Sub-goals",
+          "items": {
+            "$ref": "#/$defs/Goal"
+          }
+        },
+        "testpoints": {
+          "type": "array",
+          "description": "Testpoints belonging to this goal",
+          "items": {
+            "$ref": "#/$defs/Testpoint"
+          }
+        }
+      }
+    },
+    "Testpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique name for this testpoint"
+        },
+        "description": {
+          "type": "string",
+          "description": "What this testpoint verifies"
+        },
+        "owner": {
+          "type": "string",
+          "description": "Team or person responsible"
+        },
+        "status": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Status"
+            }
+          ],
+          "default": "planned",
+          "description": "Current status"
+        },
+        "priority": {
+          "type": "string",
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ],
+          "description": "Priority level"
+        },
+        "stage": {
+          "type": "string",
+          "description": "Verification stage (e.g. block, chip, system)"
+        },
+        "tests": {
+          "type": "array",
+          "description": "Test names or patterns that satisfy this testpoint",
+          "items": {
+            "type": "string"
+          }
+        },
+        "requirements": {
+          "type": "array",
+          "description": "Requirement IDs this testpoint satisfies",
+          "items": {
+            "type": "string"
+          }
+        },
+        "coverage": {
+          "type": "array",
+          "description": "Coverage items that this testpoint targets",
+          "items": {
+            "$ref": "#/$defs/CoverageBinding"
+          }
+        },
+        "custom": {
+          "type": "object",
+          "description": "Extension fields for custom tooling",
+          "additionalProperties": true
+        }
+      }
+    },
+    "CoverageBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "path"
+      ],
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/CoverageBindingType",
+          "description": "Coverage binding kind"
+        },
+        "path": {
+          "type": "string",
+          "description": "Dot-separated scope path in the coverage database, e.g. 'top.dut.cg1'. Supports * wildcard for single segment."
+        }
+      }
+    }
+  }
+}

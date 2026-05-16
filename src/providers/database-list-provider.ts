@@ -1,92 +1,68 @@
-import * as vscode from 'vscode';
 import * as path from 'path';
-import { DatabaseDiscovery } from './database-discovery';
-import { DatabaseManager } from './database-manager';
+import * as vscode from 'vscode';
+import { DatabaseDiscovery } from './database-discovery.js';
+import { DatabaseManager } from './database-manager.js';
 
-/**
- * Tree item representing a database file
- */
-class DatabaseItem extends vscode.TreeItem {
+export class DatabaseItem extends vscode.TreeItem {
     constructor(
-        public readonly dbPath: string,
-        public readonly isOpen: boolean,
-        public readonly isActive: boolean
+        readonly dbPath: string,
+        readonly isOpen: boolean,
+        readonly isActive: boolean,
     ) {
         super(path.basename(dbPath), vscode.TreeItemCollapsibleState.None);
-        
+
         this.contextValue = 'database';
         this.tooltip = dbPath;
         this.description = isActive ? '(active)' : (isOpen ? '(open)' : '');
-        
-        // Icon based on state
-        this.iconPath = new vscode.ThemeIcon(
-            isActive ? 'database' : (isOpen ? 'circle-filled' : 'circle-outline')
-        );
-
-        // Command to open/activate database on click
+        this.iconPath = new vscode.ThemeIcon(isActive ? 'database' : (isOpen ? 'circle-filled' : 'circle-outline'));
         this.command = {
-            command: 'pyucis.activateDatabase',
+            command: 'covsight.activateDatabase',
             title: 'Activate Database',
-            arguments: [dbPath]
+            arguments: [dbPath],
         };
     }
 }
 
-/**
- * Tree data provider for database list view
- */
-export class DatabaseListProvider implements vscode.TreeDataProvider<DatabaseItem> {
-    private _onDidChangeTreeData = new vscode.EventEmitter<DatabaseItem | undefined | null | void>();
+export class DatabaseListProvider implements vscode.TreeDataProvider<DatabaseItem>, vscode.Disposable {
+    private readonly _onDidChangeTreeData = new vscode.EventEmitter<DatabaseItem | undefined | null | void>();
     readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+    private readonly subscriptions: vscode.Disposable[] = [];
 
     constructor(
-        private discovery: DatabaseDiscovery,
-        private manager: DatabaseManager
+        private readonly discovery: DatabaseDiscovery,
+        private readonly manager: DatabaseManager,
     ) {
-        // Listen for changes
-        this.discovery.onDatabasesChanged(() => this.refresh());
-        this.manager.onActiveDatabaseChanged(() => this.refresh());
+        this.subscriptions.push(
+            this.discovery.onDatabasesChanged(() => this.refresh()),
+            this.manager.onActiveDatabaseChanged(() => this.refresh()),
+            this.manager.onDatabaseOpened(() => this.refresh()),
+            this.manager.onDatabaseClosed(() => this.refresh()),
+        );
     }
 
-    /**
-     * Refresh the tree view
-     */
     refresh(): void {
         this._onDidChangeTreeData.fire();
     }
 
-    /**
-     * Get tree item
-     */
     getTreeItem(element: DatabaseItem): vscode.TreeItem {
         return element;
     }
 
-    /**
-     * Get children (root level = all databases)
-     */
-    async getChildren(element?: DatabaseItem): Promise<DatabaseItem[]> {
+    getChildren(element?: DatabaseItem): DatabaseItem[] {
         if (element) {
-            // No children for database items
             return [];
         }
 
-        // Get all discovered databases
-        const databases = this.discovery.getDatabases();
+        const discovered = this.discovery.getDatabases();
+        const open = this.manager.getOpenDatabases();
+        const all = Array.from(new Set([...discovered, ...open])).sort((lhs, rhs) => lhs.localeCompare(rhs));
         const activePath = this.manager.getActiveDatabasePath();
-        const openDatabases = this.manager.getOpenDatabases();
 
-        return databases.map(dbPath => {
-            const isOpen = openDatabases.includes(dbPath);
-            const isActive = dbPath === activePath;
-            return new DatabaseItem(dbPath, isOpen, isActive);
-        });
+        return all.map((dbPath) => new DatabaseItem(dbPath, this.manager.isOpen(dbPath), dbPath === activePath));
     }
 
-    /**
-     * Get parent (always null for flat list)
-     */
-    getParent(_element: DatabaseItem): vscode.ProviderResult<DatabaseItem> {
-        return null;
+    dispose(): void {
+        this.subscriptions.forEach((subscription) => subscription.dispose());
+        this._onDidChangeTreeData.dispose();
     }
 }

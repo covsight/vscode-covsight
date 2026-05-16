@@ -1,83 +1,127 @@
-import * as vscode from 'vscode';
-import { DatabaseDiscovery } from './providers/database-discovery';
-import { DatabaseManager } from './providers/database-manager';
-import { DatabaseListProvider } from './providers/database-list-provider';
-import { CoverageTreeProvider } from './providers/coverage-tree-provider';
-import { CoverageDetailPanel } from './views/coverage-detail-panel';
-import { CoverageDashboard } from './views/coverage-dashboard';
-import { CoverageDecorationProvider } from './decorations/coverage-decoration-provider';
-import { DatabaseEditorProvider } from './providers/database-editor-provider';
-import { Scope, CoverItem } from './db/schema';
 import * as path from 'path';
+import * as vscode from 'vscode';
+import {
+    computeTestpointCoverages,
+    CoverageNode,
+    CoverageSourceModel,
+    findUnboundScopes,
+    TestplanNode,
+} from './model/index.js';
+import { ToggleDecorationProvider } from './decorations/coverage-decoration-provider.js';
+import { CoverageTreeProvider } from './providers/coverage-tree-provider.js';
+import { CoveragePublisher } from './providers/coverage-publisher.js';
+import { DatabaseDiscovery } from './providers/database-discovery.js';
+import { DatabaseListProvider, DatabaseItem } from './providers/database-list-provider.js';
+import { DatabaseManager } from './providers/database-manager.js';
+import { TestplanDiscovery } from './providers/testplan-discovery.js';
+import { TestplanManager } from './providers/testplan-manager.js';
+import { TestplanTreeProvider } from './providers/testplan-tree-provider.js';
+import { CdbEditorProvider } from './providers/cdb-editor-provider.js';
+import { CoverageDashboard } from './views/coverage-dashboard.js';
+import { CoverageDetailPanel } from './views/coverage-detail-panel.js';
+import { TestplanPanel } from './views/testplan-panel.js';
 
-// Global instances
-let discovery: DatabaseDiscovery;
-let manager: DatabaseManager;
-let databaseListProvider: DatabaseListProvider;
-let coverageTreeProvider: CoverageTreeProvider;
-let detailPanel: CoverageDetailPanel;
-let dashboard: CoverageDashboard;
-let decorationProvider: CoverageDecorationProvider;
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
+    console.log('CovSight Explorer is now active');
 
-/**
- * Extension activation entry point
- */
-export async function activate(context: vscode.ExtensionContext) {
-    console.log('PyUCIS Coverage Explorer is now active');
+    const discovery = new DatabaseDiscovery(context);
+    const manager = new DatabaseManager();
+    const databaseListProvider = new DatabaseListProvider(discovery, manager);
+    const coverageTreeProvider = new CoverageTreeProvider(manager);
+    const publisher = new CoveragePublisher(manager);
+    const decorationProvider = new ToggleDecorationProvider(manager);
+    const dashboard = CoverageDashboard.getInstance(context);
+    const detailPanel = CoverageDetailPanel.getInstance(context);
+    const testplanDiscovery = new TestplanDiscovery(context);
+    const testplanManager = new TestplanManager();
+    const testplanTreeProvider = new TestplanTreeProvider(testplanManager, manager);
+    const testplanPanel = TestplanPanel.getInstance(context);
 
-    // Initialize database discovery and management
-    discovery = new DatabaseDiscovery(context);
-    manager = new DatabaseManager();
-    
-    // Initialize providers
-    databaseListProvider = new DatabaseListProvider(discovery, manager);
-    coverageTreeProvider = new CoverageTreeProvider(manager, context);
-    detailPanel = CoverageDetailPanel.getInstance(context);
-    dashboard = CoverageDashboard.getInstance(context);
-    decorationProvider = new CoverageDecorationProvider(manager, context);
-    
-    // Register tree views
-    const databaseTreeView = vscode.window.createTreeView('pyucis.databases', {
+    const publishActiveCoverage = (): void => {
+        const ucis = manager.getActiveDatabase();
+        if (!ucis) {
+            publisher.publish([]);
+            return;
+        }
+
+        const sourceModel = new CoverageSourceModel(manager.getPathMapper());
+        publisher.publish(sourceModel.buildFileCoverages(ucis));
+    };
+
+    manager.onActiveDatabaseChanged(() => publishActiveCoverage());
+
+    const databaseTreeView = vscode.window.createTreeView('covsight.databases', {
         treeDataProvider: databaseListProvider,
-        showCollapseAll: false
+        showCollapseAll: false,
     });
-    
-    const coverageTreeView = vscode.window.createTreeView('pyucis.coverage', {
+    const coverageTreeView = vscode.window.createTreeView('covsight.coverage', {
         treeDataProvider: coverageTreeProvider,
-        showCollapseAll: true
+        showCollapseAll: true,
     });
-    
-    context.subscriptions.push(databaseTreeView, coverageTreeView);
+    const testplanTreeView = vscode.window.createTreeView('covsight.testplan', {
+        treeDataProvider: testplanTreeProvider,
+        showCollapseAll: true,
+    });
 
-    // Register custom editor for .cdb files
-    const editorProvider = new DatabaseEditorProvider(manager, discovery);
     context.subscriptions.push(
-        vscode.window.registerCustomEditorProvider('pyucis.databaseEditor', editorProvider, {
-            webviewOptions: { retainContextWhenHidden: true },
-            supportsMultipleEditorsPerDocument: false
-        })
+        databaseTreeView,
+        coverageTreeView,
+        testplanTreeView,
+        manager,
+        databaseListProvider,
+        coverageTreeProvider,
+        publisher,
+        decorationProvider,
+        testplanDiscovery,
+        testplanManager,
+        testplanTreeProvider,
+        { dispose: () => discovery.deactivate() },
+        vscode.window.registerCustomEditorProvider(
+            CdbEditorProvider.viewType,
+            new CdbEditorProvider(manager),
+            { webviewOptions: { retainContextWhenHidden: true } },
+        ),
     );
 
-    // Start discovery
     await discovery.activate();
+    await testplanDiscovery.activate();
 
-    // Register commands
-    
-    // Open database via file picker
-    const openDatabaseCmd = vscode.commands.registerCommand('pyucis.openDatabase', async () => {
-        const fileUri = await vscode.window.showOpenDialog({
+    const defaultFilter = vscode.workspace.getConfiguration('covsight').get<'all' | 'covered' | 'uncovered'>('defaultFilter', 'all');
+    coverageTreeProvider.setFilter(defaultFilter);
+
+    const openDatabaseCmd = vscode.commands.registerCommand('covsight.openDatabase', async () => {
+        const fileUris = await vscode.window.showOpenDialog({
             canSelectFiles: true,
             canSelectFolders: false,
             canSelectMany: false,
             filters: {
                 'UCIS Database': ['cdb'],
-                'All Files': ['*']
+                'All Files': ['*'],
             },
-            title: 'Open UCIS Coverage Database'
+            title: 'Open UCIS Coverage Database',
         });
 
-        if (fileUri && fileUri.length > 0) {
-            const dbPath = fileUri[0].fsPath;
+        const fileUri = fileUris?.[0];
+        if (!fileUri) {
+            return;
+        }
+
+        const dbPath = fileUri.fsPath;
+        const success = await manager.openDatabase(dbPath);
+        if (success) {
+            discovery.addDatabase(dbPath);
+        }
+    });
+
+    const activateDatabaseCmd = vscode.commands.registerCommand('covsight.activateDatabase', async (arg?: string | DatabaseItem) => {
+        const dbPath = extractDbPath(arg);
+        if (!dbPath) {
+            return;
+        }
+
+        if (manager.isOpen(dbPath)) {
+            manager.setActiveDatabase(dbPath);
+        } else {
             const success = await manager.openDatabase(dbPath);
             if (success) {
                 discovery.addDatabase(dbPath);
@@ -85,179 +129,225 @@ export async function activate(context: vscode.ExtensionContext) {
         }
     });
 
-    // Activate database (switch to it)
-    const activateDatabaseCmd = vscode.commands.registerCommand('pyucis.activateDatabase', async (dbPath: string) => {
-        if (manager.isOpen(dbPath)) {
-            manager.setActiveDatabase(dbPath);
-        } else {
-            await manager.openDatabase(dbPath);
+    const refreshDatabaseCmd = vscode.commands.registerCommand('covsight.refreshDatabase', async (arg?: string | DatabaseItem) => {
+        const dbPath = extractDbPath(arg) ?? manager.getActiveDatabasePath();
+        if (!dbPath) {
+            vscode.window.showWarningMessage('No active database to refresh.');
+            return;
         }
+
+        await manager.refreshDatabase(dbPath);
+        if (manager.getActiveDatabasePath() === dbPath) {
+            publishActiveCoverage();
+            testplanTreeProvider.refresh();
+        }
+        vscode.window.showInformationMessage(`Refreshed database: ${path.basename(dbPath)}`);
     });
 
-    // Refresh active database
-    const refreshDatabaseCmd = vscode.commands.registerCommand('pyucis.refreshDatabase', async () => {
-        const activePath = manager.getActiveDatabasePath();
-        if (activePath) {
-            await manager.refreshDatabase(activePath);
-            vscode.window.showInformationMessage('Database refreshed');
-        } else {
-            vscode.window.showWarningMessage('No active database to refresh');
-        }
-    });
-
-    // Rescan workspace for databases
-    const rescanWorkspaceCmd = vscode.commands.registerCommand('pyucis.rescanWorkspace', async () => {
+    const rescanWorkspaceCmd = vscode.commands.registerCommand('covsight.rescanWorkspace', async () => {
         await discovery.scanWorkspace();
         vscode.window.showInformationMessage('Workspace scanned for databases');
     });
 
-    // Close database
-    const closeDatabaseCmd = vscode.commands.registerCommand('pyucis.closeDatabase', async (dbPath?: string) => {
-        const pathToClose = dbPath || manager.getActiveDatabasePath();
-        if (pathToClose) {
-            manager.closeDatabase(pathToClose);
-            vscode.window.showInformationMessage('Database closed');
+    const closeDatabaseCmd = vscode.commands.registerCommand('covsight.closeDatabase', async (arg?: string | DatabaseItem) => {
+        const dbPath = extractDbPath(arg) ?? manager.getActiveDatabasePath();
+        if (!dbPath) {
+            vscode.window.showWarningMessage('No database selected to close.');
+            return;
         }
+
+        manager.closeDatabase(dbPath);
+        vscode.window.showInformationMessage(`Closed database: ${path.basename(dbPath)}`);
     });
 
-    // Show dashboard
-    const showDashboardCmd = vscode.commands.registerCommand('pyucis.showDashboard', async () => {
-        const queries = manager.getActiveQueries();
+    const showDashboardCmd = vscode.commands.registerCommand('covsight.showDashboard', async () => {
+        const ucis = manager.getActiveDatabase();
         const dbPath = manager.getActiveDatabasePath();
-        
-        if (!queries || !dbPath) {
+        if (!ucis || !dbPath) {
             vscode.window.showWarningMessage('No active database. Please open a database first.');
             return;
         }
-        
-        const dbName = path.basename(dbPath);
-        dashboard.showDashboard(queries, dbName);
+
+        const plan = testplanManager.getActivePlan();
+        const testpointCoverages = plan
+            ? computeTestpointCoverages(plan, ucis, manager.getFilterOptions())
+            : undefined;
+        dashboard.showDashboard(ucis, path.basename(dbPath), manager, testpointCoverages);
     });
 
-    // Show uncovered items
-    const showUncoveredCmd = vscode.commands.registerCommand('pyucis.showUncovered', async () => {
+    const showUncoveredCmd = vscode.commands.registerCommand('covsight.showUncovered', async () => {
         if (!manager.getActiveDatabase()) {
             vscode.window.showWarningMessage('No active database. Please open a database first.');
             return;
         }
         coverageTreeProvider.setFilter('uncovered');
-        vscode.window.showInformationMessage('Showing uncovered items only');
     });
 
-    // Show all items
-    const showAllCmd = vscode.commands.registerCommand('pyucis.showAll', async () => {
+    const showAllCmd = vscode.commands.registerCommand('covsight.showAll', async () => {
         coverageTreeProvider.setFilter('all');
-        vscode.window.showInformationMessage('Showing all items');
     });
 
-    // Show covered items
-    const showCoveredCmd = vscode.commands.registerCommand('pyucis.showCovered', async () => {
+    const showCoveredCmd = vscode.commands.registerCommand('covsight.showCovered', async () => {
         if (!manager.getActiveDatabase()) {
             vscode.window.showWarningMessage('No active database. Please open a database first.');
             return;
         }
         coverageTreeProvider.setFilter('covered');
-        vscode.window.showInformationMessage('Showing covered items only');
     });
 
-    // Refresh coverage tree
-    const refreshCoverageCmd = vscode.commands.registerCommand('pyucis.refreshCoverage', async () => {
+    const refreshCoverageCmd = vscode.commands.registerCommand('covsight.refreshCoverage', async () => {
         coverageTreeProvider.refresh();
+        testplanTreeProvider.refresh();
+        publishActiveCoverage();
     });
 
-    // Show scope detail
-    const showScopeDetailCmd = vscode.commands.registerCommand('pyucis.showScopeDetail', async (scope: Scope) => {
-        const queries = manager.getActiveQueries();
-        if (queries) {
-            detailPanel.showScope(scope, queries);
-        }
-    });
-
-    // Show bin detail
-    const showBinDetailCmd = vscode.commands.registerCommand('pyucis.showBinDetail', async (bin: CoverItem, scopeName: string) => {
-        const queries = manager.getActiveQueries();
-        if (queries) {
-            detailPanel.showBin(bin, scopeName, queries);
-        }
-    });
-
-    // Search scopes (F4)
-    const searchScopesCmd = vscode.commands.registerCommand('pyucis.searchScopes', async () => {
-        const queries = manager.getActiveQueries();
-        if (!queries) {
-            vscode.window.showWarningMessage('No active database. Please open a database first.');
+    const showScopeDetailCmd = vscode.commands.registerCommand('covsight.showScopeDetail', async (node: CoverageNode | undefined) => {
+        if (!node) {
             return;
         }
-
-        const searchTerm = await vscode.window.showInputBox({
-            prompt: 'Search for scopes by name',
-            placeHolder: 'Enter scope name pattern...'
-        });
-
-        if (!searchTerm) {
-            return;
-        }
-
-        // Get all scopes and filter by name
-        const rootScopes = queries.getRootScopes();
-        const allScopes: any[] = [...rootScopes];
-        
-        // Recursively get all scopes
-        const collectScopes = (scopeId: number) => {
-            const children = queries.getChildScopes(scopeId);
-            for (const child of children) {
-                allScopes.push(child);
-                collectScopes(child.scope_id);
-            }
-        };
-        
-        for (const root of rootScopes) {
-            collectScopes(root.scope_id);
-        }
-
-        // Filter by search term (case-insensitive)
-        const matching = allScopes.filter(s => 
-            s.scope_name.toLowerCase().includes(searchTerm.toLowerCase())
-        );
-
-        if (matching.length === 0) {
-            vscode.window.showInformationMessage(`No scopes found matching "${searchTerm}"`);
-            return;
-        }
-
-        // Show quick pick
-        const items = matching.map(s => ({
-            label: s.scope_name,
-            description: `ID: ${s.scope_id}`,
-            scope: s
-        }));
-
-        const selected = await vscode.window.showQuickPick(items, {
-            placeHolder: `${matching.length} scope(s) found`
-        });
-
-        if (selected) {
-            detailPanel.showScope(selected.scope, queries);
-        }
+        detailPanel.showNode(node, manager);
     });
 
-    // Toggle source decorations (F6)
-    const toggleDecorationsCmd = vscode.commands.registerCommand('pyucis.toggleDecorations', async () => {
+    const toggleDecorationsCmd = vscode.commands.registerCommand('covsight.toggleDecorations', async () => {
         decorationProvider.toggle();
-        const status = decorationProvider.isEnabled() ? 'enabled' : 'disabled';
-        vscode.window.showInformationMessage(`Source decorations ${status}`);
+        vscode.window.showInformationMessage(`Source decorations ${decorationProvider.isEnabled() ? 'enabled' : 'disabled'}`);
     });
 
-    // Enable decorations
-    const enableDecorationsCmd = vscode.commands.registerCommand('pyucis.enableDecorations', async () => {
+    const enableDecorationsCmd = vscode.commands.registerCommand('covsight.enableDecorations', async () => {
         decorationProvider.enable();
         vscode.window.showInformationMessage('Source decorations enabled');
     });
 
-    // Disable decorations
-    const disableDecorationsCmd = vscode.commands.registerCommand('pyucis.disableDecorations', async () => {
+    const disableDecorationsCmd = vscode.commands.registerCommand('covsight.disableDecorations', async () => {
         decorationProvider.disable();
         vscode.window.showInformationMessage('Source decorations disabled');
+    });
+
+    const openTestplanCmd = vscode.commands.registerCommand('covsight.openTestplan', async (uri?: vscode.Uri) => {
+        const fileUri = uri ?? (await vscode.window.showOpenDialog({
+            canSelectFiles: true,
+            canSelectMany: false,
+            filters: {
+                'CovSight Testplan': ['testplan', 'yaml', 'yml'],
+                'All Files': ['*'],
+            },
+            title: 'Open CovSight Testplan',
+        }))?.[0];
+
+        if (!fileUri) {
+            return;
+        }
+
+        const success = await testplanManager.openTestplan(fileUri.fsPath);
+        if (success) {
+            testplanDiscovery.addTestplan(fileUri.fsPath);
+        }
+    });
+
+    const closeTestplanCmd = vscode.commands.registerCommand('covsight.closeTestplan', async () => {
+        testplanManager.closeTestplan();
+    });
+
+    const rescanTestplansCmd = vscode.commands.registerCommand('covsight.rescanTestplans', async () => {
+        await testplanDiscovery.scanWorkspace();
+        vscode.window.showInformationMessage('Workspace scanned for testplans');
+    });
+
+    const showUnboundCoverageCmd = vscode.commands.registerCommand('covsight.showUnboundCoverage', async () => {
+        const ucis = manager.getActiveDatabase();
+        const plan = testplanManager.getActivePlan();
+        if (!ucis) {
+            vscode.window.showWarningMessage('No active database.');
+            return;
+        }
+        if (!plan) {
+            vscode.window.showWarningMessage('No active testplan.');
+            return;
+        }
+
+        const unbound = findUnboundScopes(ucis, plan);
+        if (unbound.length === 0) {
+            vscode.window.showInformationMessage('All coverage scopes are bound to testpoints.');
+            return;
+        }
+
+        const items = unbound.map((entry) => ({
+            label: entry.scopePath,
+            description: entry.scope.logicalName,
+        }));
+        await vscode.window.showQuickPick(items, {
+            placeHolder: `${unbound.length} unbound scope(s)`,
+            canPickMany: false,
+        });
+    });
+
+    const showTestpointDetailCmd = vscode.commands.registerCommand('covsight.showTestpointDetail', async (node?: TestplanNode) => {
+        if (!node) {
+            return;
+        }
+        testplanPanel.showNode(node, manager, testplanManager);
+    });
+
+    const configListener = vscode.workspace.onDidChangeConfiguration((event) => {
+        if (
+            event.affectsConfiguration('covsight.pathMappings') ||
+            event.affectsConfiguration('covsight.excludeIgnoredBins') ||
+            event.affectsConfiguration('covsight.excludeIllegalBins') ||
+            event.affectsConfiguration('covsight.coverageGoal')
+        ) {
+            coverageTreeProvider.refresh();
+            testplanTreeProvider.refresh();
+            publishActiveCoverage();
+        }
+        if (event.affectsConfiguration('covsight.defaultFilter')) {
+            const nextFilter = vscode.workspace.getConfiguration('covsight').get<'all' | 'covered' | 'uncovered'>('defaultFilter', 'all');
+            coverageTreeProvider.setFilter(nextFilter);
+        }
+    });
+
+    const yamlNoticeKey = 'covsight.yamlNoticeShown';
+    const openDocListener = vscode.workspace.onDidOpenTextDocument(async (doc) => {
+        if (doc.uri.scheme !== 'file') {
+            return;
+        }
+
+        const name = path.basename(doc.fileName);
+        const isTestplan = name.endsWith('.testplan') || /testplan.*\.(ya?ml)$/i.test(name);
+        if (!isTestplan) {
+            return;
+        }
+
+        const shown = context.workspaceState.get<boolean>(yamlNoticeKey, false);
+        if (!shown) {
+            const yamlExt = vscode.extensions.getExtension('redhat.vscode-yaml');
+            if (!yamlExt) {
+                await context.workspaceState.update(yamlNoticeKey, true);
+                const choice = await vscode.window.showInformationMessage(
+                    'Install the YAML extension by Red Hat for IntelliSense in CovSight testplan files.',
+                    'Install',
+                    'Dismiss',
+                );
+                if (choice === 'Install') {
+                    void vscode.commands.executeCommand('workbench.extensions.installExtension', 'redhat.vscode-yaml');
+                }
+            }
+        }
+
+        if (testplanManager.getActivePath() === doc.fileName) {
+            return;
+        }
+
+        const choice = await vscode.window.showInformationMessage(
+            `Load CovSight testplan ${name}?`,
+            'Load',
+            'Dismiss',
+        );
+        if (choice === 'Load') {
+            const success = await testplanManager.openTestplan(doc.fileName);
+            if (success) {
+                testplanDiscovery.addTestplan(doc.fileName);
+            }
+        }
     });
 
     context.subscriptions.push(
@@ -272,27 +362,28 @@ export async function activate(context: vscode.ExtensionContext) {
         showCoveredCmd,
         refreshCoverageCmd,
         showScopeDetailCmd,
-        showBinDetailCmd,
-        searchScopesCmd,
         toggleDecorationsCmd,
         enableDecorationsCmd,
-        disableDecorationsCmd
+        disableDecorationsCmd,
+        openTestplanCmd,
+        closeTestplanCmd,
+        rescanTestplansCmd,
+        showUnboundCoverageCmd,
+        showTestpointDetailCmd,
+        configListener,
+        openDocListener,
     );
 
-    console.log('PyUCIS Coverage Explorer ready!');
+    console.log('CovSight Explorer ready!');
 }
 
-/**
- * Extension deactivation
- */
-export function deactivate() {
-    console.log('PyUCIS Coverage Explorer is now deactivated');
-    
-    // Cleanup
-    if (discovery) {
-        discovery.deactivate();
+export function deactivate(): void {
+    console.log('CovSight Explorer is now deactivated');
+}
+
+function extractDbPath(arg?: string | DatabaseItem): string | undefined {
+    if (typeof arg === 'string') {
+        return arg;
     }
-    if (manager) {
-        manager.closeAll();
-    }
+    return arg?.dbPath;
 }

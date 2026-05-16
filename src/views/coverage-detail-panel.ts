@@ -1,16 +1,14 @@
 import * as vscode from 'vscode';
-import { WebviewPanelManager } from './webview-base';
-import { Scope, ScopeType, CoverItem } from '../db/schema';
-import { UcisQueries } from '../db/queries';
+import { CoverItem, CoverTypeT, Scope, ScopeTypeT } from '@covsight/core';
+import { CoverageNode, CoverageTreeModel, FilterOptions } from '../model/index.js';
+import { DatabaseManager } from '../providers/database-manager.js';
+import { WebviewPanelManager } from './webview-base.js';
 
-/**
- * Detail panel for coverage scopes and bins
- */
 export class CoverageDetailPanel extends WebviewPanelManager {
     private static instance: CoverageDetailPanel | undefined;
-    
+
     private constructor(context: vscode.ExtensionContext) {
-        super(context, 'pyucis.detail', 'Coverage Detail');
+        super(context, 'covsight.detail', 'Coverage Detail');
     }
 
     public static getInstance(context: vscode.ExtensionContext): CoverageDetailPanel {
@@ -20,257 +18,168 @@ export class CoverageDetailPanel extends WebviewPanelManager {
         return CoverageDetailPanel.instance;
     }
 
-    /**
-     * Show scope details
-     */
-    public showScope(scope: Scope, queries: UcisQueries): void {
-        this.show();
-        
-        const html = this.generateScopeHtml(scope, queries);
-        if (this.panel) {
-            this.panel.webview.html = html;
-            this.panel.title = `${ScopeType[scope.scope_type]}: ${scope.scope_name}`;
-        }
+    showNode(node: CoverageNode, manager: DatabaseManager): void {
+        const opts = manager.getFilterOptions();
+        const html = this.buildNodeHtml(node, opts);
+        this.showPanel(html, `Detail: ${node.label}`);
     }
 
-    /**
-     * Show bin details
-     */
-    public showBin(bin: CoverItem, scopeName: string, queries: UcisQueries): void {
-        this.show();
-        
-        const html = this.generateBinHtml(bin, scopeName, queries);
-        if (this.panel) {
-            this.panel.webview.html = html;
-            this.panel.title = `Bin: ${bin.cover_name}`;
-        }
+    update(data: unknown): void {
+        void data;
     }
 
-    public update(data: any): void {
-        // Not used - we call showScope/showBin directly
-    }
+    private buildNodeHtml(node: CoverageNode, opts: FilterOptions): string {
+        const path = CoverageTreeModel.getScopePath(node.scope) || node.label;
+        const sourcePath = node.scope.fileHandle?.filePath ?? 'N/A';
+        const sourceLine = node.scope.sourceInfo?.line;
 
-    /**
-     * Generate HTML for scope details
-     */
-    private generateScopeHtml(scope: Scope, queries: UcisQueries): string {
-        let content = '';
+        // Collect all leaf sections (scopes that have direct items) from the subtree.
+        const sections = collectItemSections(node.scope, opts);
 
-        // Header
-        content += `<h1>${this.escapeHtml(scope.scope_name)}</h1>`;
-        content += `<p><strong>Type:</strong> ${ScopeType[scope.scope_type]}</p>`;
-
-        // Coverage metrics for coverpoints and crosses
-        if (scope.scope_type === ScopeType.COVERPOINT || scope.scope_type === ScopeType.CROSS) {
-            const coverage = queries.calculateCoverage(scope.scope_id);
-            const cssClass = this.getCoverageClass(coverage.percentage);
-            
-            content += `<div class="coverage-header">`;
-            content += `<div>`;
-            content += `<h2>Coverage</h2>`;
-            content += `<div class="coverage-percentage ${cssClass}">${this.formatPercentage(coverage.percentage)}</div>`;
-            content += `<p>${coverage.covered} / ${coverage.total} bins covered</p>`;
-            content += `</div>`;
-            content += `</div>`;
-            
-            content += `<div class="progress-bar">`;
-            content += `<div class="progress-fill ${cssClass}" style="width: ${coverage.percentage}%">`;
-            if (coverage.percentage > 10) {
-                content += this.formatPercentage(coverage.percentage);
-            }
-            content += `</div>`;
-            content += `</div>`;
-        }
-
-        // Metadata
-        content += `<div class="metadata">`;
-        content += `<div class="metadata-row">`;
-        content += `<span class="metadata-label">Scope ID:</span>`;
-        content += `<span class="metadata-value">${scope.scope_id}</span>`;
-        content += `</div>`;
-        
-        if (scope.weight !== 1) {
-            content += `<div class="metadata-row">`;
-            content += `<span class="metadata-label">Weight:</span>`;
-            content += `<span class="metadata-value">${scope.weight}</span>`;
-            content += `</div>`;
-        }
-        
-        if (scope.at_least > 1) {
-            content += `<div class="metadata-row">`;
-            content += `<span class="metadata-label">At Least:</span>`;
-            content += `<span class="metadata-value">${scope.at_least}</span>`;
-            content += `</div>`;
-        }
-        
-        if (scope.source_file_id !== null) {
-            content += `<div class="metadata-row">`;
-            content += `<span class="metadata-label">Source File:</span>`;
-            const fileRef = queries.getFile(scope.source_file_id);
-            if (fileRef) {
-                content += `<span class="metadata-value">${this.escapeHtml(fileRef.file_path)}`;
-                if (scope.source_line !== null) {
-                    content += `:${scope.source_line}`;
-                }
-                content += `</span>`;
-            } else {
-                content += `<span class="metadata-value">File ID: ${scope.source_file_id}</span>`;
-            }
-            content += `</div>`;
-        }
-        content += `</div>`;
-
-        // Child scopes
-        const childScopes = queries.getChildScopes(scope.scope_id);
-        if (childScopes.length > 0) {
-            content += `<div class="section">`;
-            content += `<h2>Child Scopes (${childScopes.length})</h2>`;
-            content += `<table>`;
-            content += `<tr><th>Name</th><th>Type</th><th>Weight</th></tr>`;
-            
-            for (const child of childScopes) {
-                content += `<tr>`;
-                content += `<td>${this.escapeHtml(child.scope_name)}</td>`;
-                content += `<td>${ScopeType[child.scope_type]}</td>`;
-                content += `<td>${child.weight}</td>`;
-                content += `</tr>`;
-            }
-            
-            content += `</table>`;
-            content += `</div>`;
-        }
-
-        // Bins for coverpoints and crosses
-        if (scope.scope_type === ScopeType.COVERPOINT || scope.scope_type === ScopeType.CROSS) {
-            const bins = queries.getCoverItems(scope.scope_id);
-            
-            if (bins.length > 0) {
-                content += `<div class="section">`;
-                content += `<h2>Bins (${bins.length})</h2>`;
-                content += `<table>`;
-                content += `<tr><th>Name</th><th>Hit Count</th><th>Goal</th><th>Status</th><th>Weight</th></tr>`;
-                
-                for (const bin of bins) {
-                    const isCovered = bin.cover_data >= bin.at_least;
-                    const statusClass = isCovered ? 'status-covered' : 'status-uncovered';
-                    const status = isCovered ? '✓ Covered' : '✗ Uncovered';
-                    
-                    content += `<tr>`;
-                    content += `<td>${this.escapeHtml(bin.cover_name)}</td>`;
-                    content += `<td><strong>${bin.cover_data}</strong></td>`;
-                    content += `<td>${bin.at_least}</td>`;
-                    content += `<td class="${statusClass}">${status}</td>`;
-                    content += `<td>${bin.weight}</td>`;
-                    content += `</tr>`;
-                }
-                
-                content += `</table>`;
-                content += `</div>`;
-            }
-        }
-
-        return this.getBaseHtml(content);
-    }
-
-    /**
-     * Generate HTML for bin details
-     */
-    private generateBinHtml(bin: CoverItem, scopeName: string, queries: UcisQueries): string {
-        const isCovered = bin.cover_data >= bin.at_least;
-        const percentage = bin.at_least > 0 ? (Math.min(bin.cover_data / bin.at_least, 1) * 100) : 0;
-        const cssClass = isCovered ? 'high' : 'low';
-        
-        let content = '';
-
-        // Header
-        content += `<h1>${this.escapeHtml(bin.cover_name)}</h1>`;
-        content += `<p><strong>Scope:</strong> ${this.escapeHtml(scopeName)}</p>`;
-
-        // Status badge
-        if (isCovered) {
-            content += `<span class="badge badge-covered">✓ COVERED</span>`;
+        let itemsHtml: string;
+        if (sections.length === 0) {
+            itemsHtml = '<p class="empty-message">No cover items in this subtree.</p>';
+        } else if (sections.length === 1 && sections[0]!.scopePath === path) {
+            // Same scope — skip the redundant sub-heading
+            itemsHtml = renderBinTable(sections[0]!.items, opts);
         } else {
-            content += `<span class="badge badge-uncovered">✗ UNCOVERED</span>`;
+            itemsHtml = sections.map((sec) => `
+<section class="section">
+    <h3>${escapeHtml(sec.scopePath)}</h3>
+    ${renderBinTable(sec.items, opts)}
+</section>`).join('');
         }
 
-        // Hit count
-        content += `<div class="coverage-header">`;
-        content += `<div>`;
-        content += `<h2>Hit Count</h2>`;
-        content += `<div class="coverage-percentage ${cssClass}">${bin.cover_data} / ${bin.at_least}</div>`;
-        content += `</div>`;
-        content += `</div>`;
-
-        content += `<div class="progress-bar">`;
-        content += `<div class="progress-fill ${cssClass}" style="width: ${percentage}%">`;
-        if (percentage > 10) {
-            content += `${bin.cover_data} hits`;
-        }
-        content += `</div>`;
-        content += `</div>`;
-
-        // Metadata
-        content += `<div class="metadata">`;
-        content += `<div class="metadata-row">`;
-        content += `<span class="metadata-label">Cover ID:</span>`;
-        content += `<span class="metadata-value">${bin.cover_id}</span>`;
-        content += `</div>`;
-        content += `<div class="metadata-row">`;
-        content += `<span class="metadata-label">Index:</span>`;
-        content += `<span class="metadata-value">${bin.cover_index}</span>`;
-        content += `</div>`;
-        content += `<div class="metadata-row">`;
-        content += `<span class="metadata-label">Weight:</span>`;
-        content += `<span class="metadata-value">${bin.weight}</span>`;
-        content += `</div>`;
-        content += `<div class="metadata-row">`;
-        content += `<span class="metadata-label">Goal (at_least):</span>`;
-        content += `<span class="metadata-value">${bin.at_least}</span>`;
-        content += `</div>`;
-        content += `</div>`;
-
-        // Contributing tests
-        try {
-            const tests = queries.getTestsForBin(bin.cover_id);
-            
-            if (tests.length > 0) {
-                content += `<div class="section">`;
-                content += `<h2>Contributing Tests (${tests.length})</h2>`;
-                content += `<table>`;
-                content += `<tr><th>Test Name</th><th>Contribution</th><th>Status</th></tr>`;
-                
-                for (const test of tests) {
-                    const statusText = test.test_status === 0 ? 'Passed' : `Status ${test.test_status}`;
-                    content += `<tr>`;
-                    content += `<td>${this.escapeHtml(test.test_name)}</td>`;
-                    content += `<td><strong>${test.contribution}</strong></td>`;
-                    content += `<td>${statusText}</td>`;
-                    content += `</tr>`;
-                }
-                
-                content += `</table>`;
-                content += `</div>`;
-            } else if (bin.cover_data > 0) {
-                content += `<div class="section">`;
-                content += `<p class="empty-message">No test history available</p>`;
-                content += `</div>`;
-            }
-        } catch (error) {
-            console.error('Error getting test data:', error);
-        }
+        const content = `
+<h1>${escapeHtml(node.label)}</h1>
+<div class="metadata">
+    <div class="metadata-row"><span class="metadata-label">Scope Type</span><span class="metadata-value">${escapeHtml(scopeTypeName(node.scopeType))}</span></div>
+    <div class="metadata-row"><span class="metadata-label">Scope Path</span><span class="metadata-value">${escapeHtml(path)}</span></div>
+    <div class="metadata-row"><span class="metadata-label">Source</span><span class="metadata-value">${escapeHtml(sourcePath)}${sourceLine ? `:${sourceLine}` : ''}</span></div>
+</div>
+<section class="section">
+    <h2>Coverage Stats</h2>
+    <table>
+        <thead>
+            <tr><th>Covered</th><th>Total</th><th>Percent</th><th>Goal Status</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>${node.stats.covered}</td>
+                <td>${node.stats.total}</td>
+                <td>${node.stats.percentage}%</td>
+                <td class="${node.stats.isMet ? 'status-covered' : 'status-uncovered'}">${node.stats.isMet ? 'Met' : 'Not Met'}</td>
+            </tr>
+        </tbody>
+    </table>
+</section>
+<section class="section">
+    <h2>Cover Items</h2>
+    ${itemsHtml}
+</section>`;
 
         return this.getBaseHtml(content);
     }
+}
 
-    /**
-     * Escape HTML
-     */
-    private escapeHtml(text: string): string {
-        return text
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
+interface ItemSection {
+    scopePath: string;
+    items: CoverItem[];
+}
+
+/** Recursively collect scopes that have direct cover items. */
+function collectItemSections(scope: Scope, opts: FilterOptions): ItemSection[] {
+    const sections: ItemSection[] = [];
+
+    const directItems = Array.from(scope.coverItems()).filter((item) => !isFiltered(item, opts));
+    if (directItems.length > 0) {
+        sections.push({
+            scopePath: CoverageTreeModel.getScopePath(scope) || scope.logicalName,
+            items: directItems,
+        });
     }
+
+    for (let i = 0; i < scope.numCoverChildren(); i++) {
+        sections.push(...collectItemSections(scope.coverChild(i), opts));
+    }
+
+    return sections;
+}
+
+function renderBinTable(items: CoverItem[], _opts: FilterOptions): string {
+    const rows = items.map((item) => {
+        const covered = isCovered(item);
+        return `
+        <tr>
+            <td>${escapeHtml(item.name)}</td>
+            <td>${escapeHtml(coverTypeName(item.coverType))}</td>
+            <td>${item.data.count.toString()}</td>
+            <td>${item.data.atLeast.toString()}</td>
+            <td class="${covered ? 'status-covered' : 'status-uncovered'}">${covered ? 'Covered' : 'Uncovered'}</td>
+        </tr>`;
+    }).join('');
+
+    return `
+    <table>
+        <thead>
+            <tr><th>Name</th><th>Type</th><th>Count</th><th>Goal</th><th>Status</th></tr>
+        </thead>
+        <tbody>${rows}
+        </tbody>
+    </table>`;
+}
+
+function isCovered(item: CoverItem): boolean {
+    return item.data.atLeast === 0n || item.data.count >= item.data.atLeast;
+}
+
+function isFiltered(item: CoverItem, opts: FilterOptions): boolean {
+    return ((item.coverType & CoverTypeT.IGNOREBIN) !== 0 && opts.excludeIgnoredBins)
+        || ((item.coverType & CoverTypeT.ILLEGALBIN) !== 0 && opts.excludeIllegalBins);
+}
+
+function scopeTypeName(scopeType: bigint): string {
+    const names: Array<[bigint, string]> = [
+        [ScopeTypeT.INSTANCE,      'Instance'],
+        [ScopeTypeT.COVERGROUP,    'Covergroup'],
+        [ScopeTypeT.COVERINSTANCE, 'Cover Instance'],
+        [ScopeTypeT.COVERPOINT,    'Coverpoint'],
+        [ScopeTypeT.CROSS,         'Cross'],
+        [ScopeTypeT.TOGGLE,        'Toggle'],
+        [ScopeTypeT.BRANCH,        'Branch'],
+        [ScopeTypeT.EXPR,          'Expression'],
+        [ScopeTypeT.COND,          'Condition'],
+        [ScopeTypeT.FSM,           'FSM'],
+        [ScopeTypeT.FSM_STATES,    'FSM States'],
+        [ScopeTypeT.FSM_TRANS,     'FSM Transitions'],
+        [ScopeTypeT.DU_MODULE,     'Design Unit (Module)'],
+        [ScopeTypeT.DU_INTERFACE,  'Design Unit (Interface)'],
+    ];
+    return names.find(([value]) => value === scopeType)?.[1] ?? `0x${scopeType.toString(16)}`;
+}
+
+function coverTypeName(coverType: number): string {
+    const names: Array<[number, string]> = [
+        [CoverTypeT.STMTBIN,   'Statement'],
+        [CoverTypeT.BLOCKBIN,  'Block'],
+        [CoverTypeT.BRANCHBIN, 'Branch'],
+        [CoverTypeT.EXPRBIN,   'Expression'],
+        [CoverTypeT.CONDBIN,   'Condition'],
+        [CoverTypeT.TOGGLEBIN, 'Toggle'],
+        [CoverTypeT.FSMBIN,    'FSM'],
+        [CoverTypeT.IGNOREBIN, 'Ignored'],
+        [CoverTypeT.ILLEGALBIN,'Illegal'],
+        [CoverTypeT.CVGBIN,    'Coverage'],
+    ];
+    const matched = names.filter(([value]) => (coverType & value) !== 0).map(([, name]) => name);
+    return matched.length > 0 ? matched.join(', ') : `0x${coverType.toString(16)}`;
+}
+
+function escapeHtml(value: string): string {
+    return value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }

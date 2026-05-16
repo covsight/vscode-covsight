@@ -4,10 +4,12 @@ package:
     dep-sets:
     - name: default-dev
       deps:
-      - name: pyucis
-        url: https://github.com/fvutils/pyucis.git
+      - name: covsight-core
+        url: https://github.com/covsight/covsight-core.git
       - name: sphinx
         src: pypi
+      - name: node
+        src: package.json
     - name: default
       deps: []
 

@@ -1,245 +1,327 @@
 {
-  "name": "pyucis-coverage-explorer",
-  "displayName": "PyUCIS Coverage Explorer",
-  "description": "Navigate and understand functional and code coverage data stored in pyucis SQLite databases",
-  "version": "0.1.0",
-  "publisher": "fvutils",
+  "name": "covsight",
+  "displayName": "CovSight",
+  "description": "Navigate and understand functional coverage data from UCIS NCDB databases",
+  "version": "0.2.0",
+  "publisher": "covsight",
   "repository": {
     "type": "git",
-    "url": "https://github.com/fvutils/pyucis-viewer-vscode"
+    "url": "https://github.com/covsight/vscode-covsight"
   },
+  "icon": "media/covsight-icon.png",
   "engines": {
-    "vscode": "^1.75.0"
+    "vscode": "^1.88.0"
   },
   "categories": [
     "Testing",
-    "Visualization",
-    "Data Science"
+    "Visualization"
   ],
   "keywords": [
     "coverage",
     "ucis",
+    "ncdb",
     "verification",
     "systemverilog",
-    "uvm"
+    "uvm",
+    "covsight"
   ],
   "activationEvents": [
-    "onLanguage:systemverilog",
-    "onLanguage:verilog",
     "workspaceContains:**/*.cdb",
-    "onCustomEditor:pyucis.databaseEditor"
+    "workspaceContains:**/*.testplan",
+    "workspaceContains:**/*testplan*.yaml",
+    "workspaceContains:**/*testplan*.yml",
+    "onLanguage:covsight-cdb",
+    "onCustomEditor:covsight.cdbEditor"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "customEditors": [
       {
-        "viewType": "pyucis.databaseEditor",
-        "displayName": "UCIS Coverage Database",
+        "viewType": "covsight.cdbEditor",
+        "displayName": "CovSight Coverage Database",
         "selector": [
-          {
-            "filenamePattern": "*.cdb"
-          }
+          { "filenamePattern": "*.cdb" }
         ],
         "priority": "default"
       }
     ],
+    "languages": [
+      {
+        "id": "covsight-testplan",
+        "aliases": [
+          "CovSight Testplan",
+          "testplan"
+        ],
+        "extensions": [
+          ".testplan"
+        ],
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "covsight-cdb",
+        "aliases": [
+          "CovSight Database",
+          "cdb"
+        ],
+        "extensions": [
+          ".cdb"
+        ],
+        "icon": {
+          "light": "./media/covsight-cdb-icon.svg",
+          "dark": "./media/covsight-cdb-icon.svg"
+        }
+      }
+    ],
     "commands": [
       {
-        "command": "pyucis.openDatabase",
-        "title": "PyUCIS: Open Coverage Database",
+        "command": "covsight.openDatabase",
+        "title": "CovSight: Open Coverage Database",
         "icon": "$(database)"
       },
       {
-        "command": "pyucis.activateDatabase",
-        "title": "PyUCIS: Activate Database"
+        "command": "covsight.activateDatabase",
+        "title": "CovSight: Activate Database"
       },
       {
-        "command": "pyucis.closeDatabase",
-        "title": "PyUCIS: Close Database",
+        "command": "covsight.closeDatabase",
+        "title": "CovSight: Close Database",
         "icon": "$(close)"
       },
       {
-        "command": "pyucis.refreshDatabase",
-        "title": "PyUCIS: Refresh Database",
+        "command": "covsight.refreshDatabase",
+        "title": "CovSight: Refresh Database",
         "icon": "$(refresh)"
       },
       {
-        "command": "pyucis.rescanWorkspace",
-        "title": "PyUCIS: Rescan Workspace for Databases",
+        "command": "covsight.rescanWorkspace",
+        "title": "CovSight: Rescan Workspace for Databases",
         "icon": "$(search)"
       },
       {
-        "command": "pyucis.showDashboard",
-        "title": "PyUCIS: Show Coverage Dashboard",
+        "command": "covsight.showDashboard",
+        "title": "CovSight: Show Coverage Dashboard",
         "icon": "$(dashboard)"
       },
       {
-        "command": "pyucis.showUncovered",
-        "title": "PyUCIS: Show Uncovered Items",
+        "command": "covsight.showUncovered",
+        "title": "CovSight: Show Uncovered Items",
         "icon": "$(warning)"
       },
       {
-        "command": "pyucis.showAll",
-        "title": "PyUCIS: Show All Items",
+        "command": "covsight.showAll",
+        "title": "CovSight: Show All Items",
         "icon": "$(list-tree)"
       },
       {
-        "command": "pyucis.showCovered",
-        "title": "PyUCIS: Show Covered Items",
+        "command": "covsight.showCovered",
+        "title": "CovSight: Show Covered Items",
         "icon": "$(pass)"
       },
       {
-        "command": "pyucis.refreshCoverage",
-        "title": "PyUCIS: Refresh Coverage View",
+        "command": "covsight.refreshCoverage",
+        "title": "CovSight: Refresh Coverage View",
         "icon": "$(refresh)"
       },
       {
-        "command": "pyucis.searchScopes",
-        "title": "PyUCIS: Search Scopes",
-        "icon": "$(search)"
-      },
-      {
-        "command": "pyucis.toggleDecorations",
-        "title": "PyUCIS: Toggle Source Decorations",
+        "command": "covsight.toggleDecorations",
+        "title": "CovSight: Toggle Source Decorations",
         "icon": "$(eye)"
       },
       {
-        "command": "pyucis.enableDecorations",
-        "title": "PyUCIS: Enable Source Decorations"
+        "command": "covsight.enableDecorations",
+        "title": "CovSight: Enable Source Decorations"
       },
       {
-        "command": "pyucis.disableDecorations",
-        "title": "PyUCIS: Disable Source Decorations"
+        "command": "covsight.disableDecorations",
+        "title": "CovSight: Disable Source Decorations"
+      },
+      {
+        "command": "covsight.openTestplan",
+        "title": "CovSight: Open Testplan",
+        "icon": "$(file-code)"
+      },
+      {
+        "command": "covsight.closeTestplan",
+        "title": "CovSight: Close Testplan",
+        "icon": "$(close)"
+      },
+      {
+        "command": "covsight.rescanTestplans",
+        "title": "CovSight: Rescan Workspace for Testplans",
+        "icon": "$(search)"
+      },
+      {
+        "command": "covsight.showUnboundCoverage",
+        "title": "CovSight: Show Unbound Coverage Scopes"
+      },
+      {
+        "command": "covsight.showTestpointDetail",
+        "title": "CovSight: Show Testpoint Detail"
       }
     ],
     "views": {
       "explorer": [
         {
-          "id": "pyucis.databases",
+          "id": "covsight.databases",
           "name": "Coverage Databases",
-          "icon": "$(database)",
-          "contextualTitle": "PyUCIS Coverage"
+          "icon": "media/covsight-icon-16.svg",
+          "contextualTitle": "CovSight"
         },
         {
-          "id": "pyucis.coverage",
+          "id": "covsight.coverage",
           "name": "Coverage Hierarchy",
-          "icon": "$(symbol-class)",
-          "contextualTitle": "PyUCIS Coverage"
+          "icon": "media/covsight-icon-16.svg",
+          "contextualTitle": "CovSight"
+        },
+        {
+          "id": "covsight.testplan",
+          "name": "Testplan",
+          "icon": "media/covsight-icon-16.svg",
+          "contextualTitle": "CovSight"
         }
       ]
     },
     "viewsWelcome": [
       {
-        "view": "pyucis.databases",
-        "contents": "No coverage databases found in workspace.\n[Open Database](command:pyucis.openDatabase)"
+        "view": "covsight.databases",
+        "contents": "No coverage databases found in workspace.\n[Open Database](command:covsight.openDatabase)"
+      },
+      {
+        "view": "covsight.testplan",
+        "contents": "No testplan loaded.\n[Open Testplan](command:covsight.openTestplan)"
       }
     ],
     "menus": {
       "view/title": [
         {
-          "command": "pyucis.openDatabase",
-          "when": "view == pyucis.databases",
+          "command": "covsight.openDatabase",
+          "when": "view == covsight.databases",
           "group": "navigation"
         },
         {
-          "command": "pyucis.rescanWorkspace",
-          "when": "view == pyucis.databases",
+          "command": "covsight.rescanWorkspace",
+          "when": "view == covsight.databases",
           "group": "navigation"
         },
         {
-          "command": "pyucis.refreshDatabase",
-          "when": "view == pyucis.coverage",
+          "command": "covsight.refreshDatabase",
+          "when": "view == covsight.coverage",
           "group": "navigation"
         },
         {
-          "command": "pyucis.showDashboard",
-          "when": "view == pyucis.coverage",
+          "command": "covsight.showDashboard",
+          "when": "view == covsight.coverage",
           "group": "navigation"
         },
         {
-          "command": "pyucis.showUncovered",
-          "when": "view == pyucis.coverage",
+          "command": "covsight.showUncovered",
+          "when": "view == covsight.coverage",
           "group": "1_filter@1"
         },
         {
-          "command": "pyucis.showAll",
-          "when": "view == pyucis.coverage",
+          "command": "covsight.showAll",
+          "when": "view == covsight.coverage",
           "group": "1_filter@2"
         },
         {
-          "command": "pyucis.showCovered",
-          "when": "view == pyucis.coverage",
+          "command": "covsight.showCovered",
+          "when": "view == covsight.coverage",
           "group": "1_filter@3"
+        },
+        {
+          "command": "covsight.openTestplan",
+          "when": "view == covsight.testplan",
+          "group": "navigation"
+        },
+        {
+          "command": "covsight.rescanTestplans",
+          "when": "view == covsight.testplan",
+          "group": "navigation"
+        },
+        {
+          "command": "covsight.showUnboundCoverage",
+          "when": "view == covsight.testplan",
+          "group": "1_actions"
         }
       ],
       "view/item/context": [
         {
-          "command": "pyucis.activateDatabase",
-          "when": "view == pyucis.databases && viewItem == database",
+          "command": "covsight.activateDatabase",
+          "when": "view == covsight.databases && viewItem == database",
           "group": "inline"
         },
         {
-          "command": "pyucis.closeDatabase",
-          "when": "view == pyucis.databases && viewItem == database",
+          "command": "covsight.closeDatabase",
+          "when": "view == covsight.databases && viewItem == database",
           "group": "1_actions"
         },
         {
-          "command": "pyucis.refreshDatabase",
-          "when": "view == pyucis.databases && viewItem == database",
+          "command": "covsight.refreshDatabase",
+          "when": "view == covsight.databases && viewItem == database",
+          "group": "1_actions"
+        },
+        {
+          "command": "covsight.showTestpointDetail",
+          "when": "view == covsight.testplan && viewItem == testpoint",
+          "group": "inline"
+        },
+        {
+          "command": "covsight.closeTestplan",
+          "when": "view == covsight.testplan && viewItem == plan",
           "group": "1_actions"
         }
       ]
     },
     "configuration": {
-      "title": "PyUCIS Coverage Explorer",
+      "title": "CovSight",
       "properties": {
-        "pyucis.autoDetect": {
+        "covsight.autoDetect": {
           "type": "boolean",
           "default": true,
           "description": "Automatically discover .cdb files in workspace"
         },
-        "pyucis.filePatterns": {
+        "covsight.filePatterns": {
           "type": "array",
           "default": [
             "**/*.cdb"
           ],
           "description": "Glob patterns for database discovery"
         },
-        "pyucis.coverageGoal": {
+        "covsight.coverageGoal": {
           "type": "number",
           "default": 100,
           "minimum": 0,
           "maximum": 100,
           "description": "Target coverage percentage for alerts"
         },
-        "pyucis.warningThreshold": {
+        "covsight.warningThreshold": {
           "type": "number",
           "default": 80,
           "minimum": 0,
           "maximum": 100,
           "description": "Coverage percentage below which items show warning"
         },
-        "pyucis.pathMappings": {
+        "covsight.pathMappings": {
           "type": "object",
           "default": {},
           "description": "Map database source paths to workspace paths"
         },
-        "pyucis.showDecorations": {
+        "covsight.showDecorations": {
           "type": "boolean",
           "default": false,
           "description": "Enable source gutter decorations by default"
         },
-        "pyucis.excludeIgnoredBins": {
+        "covsight.excludeIgnoredBins": {
           "type": "boolean",
           "default": true,
           "description": "Exclude IGNOREBIN from coverage calculations"
         },
-        "pyucis.excludeIllegalBins": {
+        "covsight.excludeIllegalBins": {
           "type": "boolean",
           "default": true,
           "description": "Exclude ILLEGALBIN from coverage calculations"
         },
-        "pyucis.defaultFilter": {
+        "covsight.defaultFilter": {
           "type": "string",
           "enum": [
             "all",
@@ -250,29 +332,105 @@
           "description": "Default status filter"
         }
       }
-    }
+    },
+    "walkthroughs": [
+      {
+        "id": "covsight.gettingStarted",
+        "title": "Getting Started with CovSight",
+        "description": "Learn how to view coverage data and track verification progress.",
+        "steps": [
+          {
+            "id": "covsight.gettingStarted.openDatabase",
+            "title": "Open a Coverage Database",
+            "description": "Open a `.cdb` file to start viewing coverage data.\n\n[Open Coverage Database](command:covsight.openDatabase)",
+            "media": {
+              "markdown": "walkthrough/step1-open-database.md"
+            },
+            "completionEvents": [
+              "onCommand:covsight.openDatabase"
+            ]
+          },
+          {
+            "id": "covsight.gettingStarted.viewCoverage",
+            "title": "Explore the Coverage Hierarchy",
+            "description": "Browse covergroups, coverpoints, and bins in the Coverage Hierarchy panel. Use the filter buttons to focus on uncovered items.\n\n[Show Uncovered Items](command:covsight.showUncovered)",
+            "media": {
+              "markdown": "walkthrough/step2-coverage-tree.md"
+            },
+            "completionEvents": [
+              "onView:covsight.coverage"
+            ]
+          },
+          {
+            "id": "covsight.gettingStarted.dashboard",
+            "title": "Open the Coverage Dashboard",
+            "description": "View an overall summary, per-type breakdown, and hotspot table.\n\n[Show Coverage Dashboard](command:covsight.showDashboard)",
+            "media": {
+              "markdown": "walkthrough/step3-dashboard.md"
+            },
+            "completionEvents": [
+              "onCommand:covsight.showDashboard"
+            ]
+          },
+          {
+            "id": "covsight.gettingStarted.testplan",
+            "title": "Load a Verification Testplan",
+            "description": "Open a `.testplan` YAML file to see goal and testpoint status linked to coverage.\n\n[Open Testplan](command:covsight.openTestplan)",
+            "media": {
+              "markdown": "walkthrough/step4-testplan.md"
+            },
+            "completionEvents": [
+              "onCommand:covsight.openTestplan"
+            ]
+          }
+        ]
+      }
+    ],
+    "yamlValidation": [
+      {
+        "fileMatch": "*.testplan",
+        "url": "./schemas/covsight-testplan.schema.json"
+      },
+      {
+        "fileMatch": "*testplan*.yaml",
+        "url": "./schemas/covsight-testplan.schema.json"
+      },
+      {
+        "fileMatch": "*testplan*.yml",
+        "url": "./schemas/covsight-testplan.schema.json"
+      }
+    ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "node esbuild.js --production",
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "type-check": "tsc --noEmit",
     "pretest": "npm run compile",
-    "test": "node ./dist/test/runTest.js",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest --passWithNoTests",
+    "test:watch": "node --experimental-vm-modules node_modules/.bin/jest --watch",
+    "test:coverage": "node --experimental-vm-modules node_modules/.bin/jest --coverage",
+    "test:integration": "node ./dist/test/runTest.js",
     "lint": "eslint src --ext ts",
     "package": "vsce package"
   },
   "devDependencies": {
-    "@types/node": "^18.x",
-    "@types/sql.js": "^1.4.9",
-    "@types/vscode": "^1.75.0",
+    "@types/jest": "^29.0.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.88.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
     "@vscode/test-electron": "^2.3.0",
     "@vscode/vsce": "^2.32.0",
+    "esbuild": "^0.21.0",
     "eslint": "^8.40.0",
-    "typescript": "^5.0.0"
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "typescript": "^5.4.0"
   },
   "dependencies": {
-    "sql.js": "^1.8.0"
+    "@covsight/core": "file:packages/covsight-core/ts",
+    "js-yaml": "^4.1.0"
   }
 }

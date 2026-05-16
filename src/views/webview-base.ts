@@ -26,7 +26,18 @@ export abstract class WebviewPanelManager {
     /**
      * Update panel content
      */
-    public abstract update(data: any): void;
+    public abstract update(data: unknown): void;
+
+    /**
+     * Show a panel with the provided HTML and title.
+     */
+    protected showPanel(html: string, title: string): void {
+        this.show();
+        if (this.panel) {
+            this.panel.title = title;
+            this.panel.webview.html = html;
+        }
+    }
 
     /**
      * Create the webview panel
@@ -60,7 +71,7 @@ export abstract class WebviewPanelManager {
     /**
      * Handle messages from webview
      */
-    protected handleMessage(message: any): void {
+    protected handleMessage(message: unknown): void {
         // Override in subclasses
         console.log('Received message from webview:', message);
     }
@@ -68,7 +79,7 @@ export abstract class WebviewPanelManager {
     /**
      * Post message to webview
      */
-    protected postMessage(message: any): void {
+    protected postMessage(message: unknown): void {
         this.panel?.webview.postMessage(message);
     }
 
@@ -276,8 +287,12 @@ export abstract class WebviewPanelManager {
      * Get coverage level class
      */
     protected getCoverageClass(percentage: number): string {
-        if (percentage >= 100) return 'high';
-        if (percentage >= 80) return 'medium';
+        if (percentage >= 100) {
+            return 'high';
+        }
+        if (percentage >= 80) {
+            return 'medium';
+        }
         return 'low';
     }
 

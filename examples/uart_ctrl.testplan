@@ -1,0 +1,100 @@
+name: UART Controller Verification Testplan
+description: >
+  Functional verification testplan for the uart_ctrl block.
+  Covers baud-rate configuration, parity modes, stop-bit encoding,
+  FSM state reachability, and signal toggle coverage.
+format_version: "1.0"
+
+goals:
+
+  - name: Configuration Space
+    description: Verify all supported UART configuration combinations are exercised
+    owner: uart-team
+    status: in_progress
+
+    testpoints:
+
+      - name: baud_rate_all_values
+        description: >
+          Every supported baud rate (9600, 19200, 38400, 57600, 115200) must be
+          programmed and a full UART frame transmitted at that rate.
+        priority: high
+        status: in_progress
+        tests:
+          - uart_basic_tx
+          - uart_baud_sweep
+        coverage:
+          - type: coverpoint
+            path: uart_ctrl.baud_rate_cg.baud_rate
+
+      - name: parity_all_modes
+        description: >
+          None, odd, and even parity must each be exercised with at least one
+          successful frame transfer.
+        priority: high
+        status: in_progress
+        tests:
+          - uart_basic_tx
+          - uart_basic_rx
+          - uart_parity_modes
+        coverage:
+          - type: coverpoint
+            path: uart_ctrl.baud_rate_cg.parity_mode
+
+      - name: stop_bits_both_modes
+        description: >
+          Both 1-stop-bit and 2-stop-bit configurations must be used.
+        priority: medium
+        status: complete
+        tests:
+          - uart_basic_tx
+        coverage:
+          - type: coverpoint
+            path: uart_ctrl.baud_rate_cg.stop_bits
+
+  - name: Protocol Correctness
+    description: Verify UART framing FSM visits all required states
+    owner: uart-team
+    status: in_progress
+
+    testpoints:
+
+      - name: fsm_all_states
+        description: >
+          The UART FSM must visit IDLE, START_BIT, DATA, PARITY, and STOP_BIT
+          states during normal operation.
+        priority: high
+        status: in_progress
+        tests:
+          - uart_basic_tx
+          - uart_parity_modes
+        coverage:
+          - type: coverpoint
+            path: uart_fsm.state_cg.state
+
+      - name: tx_signal_toggles
+        description: >
+          The tx_out signal must toggle in both directions during frame
+          transmission to confirm the line driver is active.
+        priority: medium
+        status: complete
+        tests:
+          - uart_basic_tx
+          - uart_loopback
+        coverage:
+          - type: covergroup
+            path: uart_tx
+
+      - name: rx_signal_toggles
+        description: >
+          The rx_in signal must toggle in both directions during frame
+          reception.  A '1 -> 0' transition (start-bit detection) is the
+          key observable.
+        priority: high
+        status: planned
+        tests:
+          - uart_basic_rx
+          - uart_loopback
+        coverage:
+          - type: covergroup
+            path: uart_rx

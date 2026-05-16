@@ -1,184 +1,117 @@
-import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
-import { UcisDatabase } from '../db/database';
-import { UcisQueries } from '../db/queries';
+import * as vscode from 'vscode';
+import { MemUCIS } from '@covsight/core';
+import { DEFAULT_FILTER_OPTIONS, FilterOptions, NcdbManager, PathMapper } from '../model/index.js';
 
-/**
- * Manages open database connections
- */
-export class DatabaseManager {
-    private openDatabases = new Map<string, UcisDatabase>();
-    private activeDatabase: string | null = null;
-    private queries = new Map<string, UcisQueries>();
-    
-    private _onActiveDatabaseChanged = new vscode.EventEmitter<string | null>();
-    public readonly onActiveDatabaseChanged = this._onActiveDatabaseChanged.event;
+export class DatabaseManager implements vscode.Disposable {
+    private readonly ncdbManager: NcdbManager;
+    private readonly _onActiveDatabaseChanged = new vscode.EventEmitter<string | null>();
+    private readonly _onDatabaseOpened = new vscode.EventEmitter<string>();
+    private readonly _onDatabaseClosed = new vscode.EventEmitter<string>();
+    private readonly unsubscribers: Array<() => void> = [];
 
-    /**
-     * Open a database file
-     */
+    readonly onActiveDatabaseChanged: vscode.Event<string | null> = this._onActiveDatabaseChanged.event;
+    readonly onDatabaseOpened: vscode.Event<string> = this._onDatabaseOpened.event;
+    readonly onDatabaseClosed: vscode.Event<string> = this._onDatabaseClosed.event;
+
+    constructor() {
+        const loader = async (filePath: string): Promise<Uint8Array> => {
+            const uri = vscode.Uri.file(filePath);
+            return vscode.workspace.fs.readFile(uri);
+        };
+
+        this.ncdbManager = new NcdbManager(loader);
+        this.unsubscribers.push(
+            this.ncdbManager.onActiveDatabaseChanged.subscribe((dbPath) => this._onActiveDatabaseChanged.fire(dbPath)),
+            this.ncdbManager.onDatabaseOpened.subscribe((dbPath) => this._onDatabaseOpened.fire(dbPath)),
+            this.ncdbManager.onDatabaseClosed.subscribe((dbPath) => this._onDatabaseClosed.fire(dbPath)),
+        );
+    }
+
     async openDatabase(dbPath: string): Promise<boolean> {
         try {
-            // Check if already open
-            if (this.openDatabases.has(dbPath)) {
-                console.log('Database already open:', dbPath);
-                this.setActiveDatabase(dbPath);
+            if (this.ncdbManager.isOpen(dbPath)) {
+                this.ncdbManager.setActiveDatabase(dbPath);
+                vscode.window.showInformationMessage(`Database already open: ${path.basename(dbPath)}`);
                 return true;
             }
 
-            // Verify file exists
-            if (!fs.existsSync(dbPath)) {
-                vscode.window.showErrorMessage(`Database file not found: ${dbPath}`);
-                return false;
-            }
-
-            // Create and open database
-            const db = new UcisDatabase(dbPath);
-            await db.open();
-
-            // Verify schema
-            if (!db.verifySchema()) {
-                db.close();
-                vscode.window.showErrorMessage(`Invalid UCIS database schema: ${path.basename(dbPath)}`);
-                return false;
-            }
-
-            // Store database and queries
-            this.openDatabases.set(dbPath, db);
-            this.queries.set(dbPath, new UcisQueries(db));
-
-            // Set as active
-            this.setActiveDatabase(dbPath);
-
-            // Get metadata for display
-            const metadata = db.getMetadata();
-            const displayName = path.basename(dbPath);
-            
-            vscode.window.showInformationMessage(
-                `Opened database: ${displayName}` + 
-                (metadata ? ` (UCIS ${metadata.ucis_version})` : '')
-            );
-
-            console.log('Successfully opened database:', dbPath);
+            await this.ncdbManager.openDatabase(dbPath);
+            this.ncdbManager.setActiveDatabase(dbPath);
+            vscode.window.showInformationMessage(`Opened database: ${path.basename(dbPath)}`);
             return true;
-
-        } catch (error) {
-            vscode.window.showErrorMessage(`Failed to open database: ${error}`);
-            console.error('Error opening database:', error);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            vscode.window.showErrorMessage(message);
             return false;
         }
     }
 
-    /**
-     * Close a database
-     */
     closeDatabase(dbPath: string): void {
-        const db = this.openDatabases.get(dbPath);
-        if (db) {
-            db.close();
-            this.openDatabases.delete(dbPath);
-            this.queries.delete(dbPath);
+        this.ncdbManager.closeDatabase(dbPath);
+    }
 
-            if (this.activeDatabase === dbPath) {
-                // Set active to another open database, or null
-                const remaining = Array.from(this.openDatabases.keys());
-                this.setActiveDatabase(remaining.length > 0 ? remaining[0] : null);
-            }
-
-            console.log('Closed database:', dbPath);
+    async refreshDatabase(dbPath: string): Promise<void> {
+        try {
+            await this.ncdbManager.refreshDatabase(dbPath);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            vscode.window.showErrorMessage(message);
+            throw err;
         }
     }
 
-    /**
-     * Close all databases
-     */
-    closeAll(): void {
-        for (const dbPath of this.openDatabases.keys()) {
-            this.closeDatabase(dbPath);
-        }
-    }
-
-    /**
-     * Get database instance
-     */
-    getDatabase(dbPath: string): UcisDatabase | undefined {
-        return this.openDatabases.get(dbPath);
-    }
-
-    /**
-     * Get queries instance for a database
-     */
-    getQueries(dbPath: string): UcisQueries | undefined {
-        return this.queries.get(dbPath);
-    }
-
-    /**
-     * Get active database
-     */
-    getActiveDatabase(): UcisDatabase | null {
-        if (this.activeDatabase) {
-            return this.openDatabases.get(this.activeDatabase) || null;
-        }
-        return null;
-    }
-
-    /**
-     * Get active database path
-     */
-    getActiveDatabasePath(): string | null {
-        return this.activeDatabase;
-    }
-
-    /**
-     * Get queries for active database
-     */
-    getActiveQueries(): UcisQueries | null {
-        if (this.activeDatabase) {
-            return this.queries.get(this.activeDatabase) || null;
-        }
-        return null;
-    }
-
-    /**
-     * Set active database
-     */
     setActiveDatabase(dbPath: string | null): void {
-        if (this.activeDatabase !== dbPath) {
-            this.activeDatabase = dbPath;
-            this._onActiveDatabaseChanged.fire(dbPath);
-            console.log('Active database changed:', dbPath);
+        try {
+            this.ncdbManager.setActiveDatabase(dbPath);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            vscode.window.showErrorMessage(message);
         }
     }
 
-    /**
-     * Get all open database paths
-     */
+    getActiveDatabase(): MemUCIS | null {
+        return this.ncdbManager.getActiveDatabase();
+    }
+
+    getActiveDatabasePath(): string | null {
+        return this.ncdbManager.getActiveDatabasePath();
+    }
+
     getOpenDatabases(): string[] {
-        return Array.from(this.openDatabases.keys());
+        return this.ncdbManager.getOpenDatabases();
     }
 
-    /**
-     * Check if database is open
-     */
     isOpen(dbPath: string): boolean {
-        return this.openDatabases.has(dbPath);
+        return this.ncdbManager.isOpen(dbPath);
     }
 
-    /**
-     * Refresh a database (reload from disk)
-     */
-    async refreshDatabase(dbPath: string): Promise<boolean> {
-        const wasActive = this.activeDatabase === dbPath;
-        
-        // Close and reopen
-        this.closeDatabase(dbPath);
-        const success = await this.openDatabase(dbPath);
-        
-        if (success && wasActive) {
-            this.setActiveDatabase(dbPath);
+    closeAll(): void {
+        this.ncdbManager.closeAll();
+    }
+
+    getFilterOptions(): FilterOptions {
+        const config = vscode.workspace.getConfiguration('covsight');
+        return {
+            excludeIgnoredBins: config.get<boolean>('excludeIgnoredBins', DEFAULT_FILTER_OPTIONS.excludeIgnoredBins),
+            excludeIllegalBins: config.get<boolean>('excludeIllegalBins', DEFAULT_FILTER_OPTIONS.excludeIllegalBins),
+            coverageGoal: config.get<number>('coverageGoal', DEFAULT_FILTER_OPTIONS.coverageGoal),
+        };
+    }
+
+    getPathMapper(): PathMapper {
+        const config = vscode.workspace.getConfiguration('covsight');
+        const mappings = config.get<Record<string, string>>('pathMappings', {});
+        return PathMapper.fromConfig(mappings);
+    }
+
+    dispose(): void {
+        this.ncdbManager.closeAll();
+        for (const unsubscribe of this.unsubscribers) {
+            unsubscribe();
         }
-        
-        return success;
+        this._onActiveDatabaseChanged.dispose();
+        this._onDatabaseOpened.dispose();
+        this._onDatabaseClosed.dispose();
     }
 }

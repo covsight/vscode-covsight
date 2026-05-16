@@ -20,4 +20,20 @@ module.exports = {
         'no-throw-literal': 'warn',
         'semi': 'off',
     },
+    overrides: [
+        {
+            // Model layer must not import vscode
+            files: ['src/model/**/*.ts'],
+            rules: {
+                'no-restricted-imports': ['error', { patterns: ['vscode'] }],
+            },
+        },
+        {
+            // Presentation layer must not import from deleted src/db/
+            files: ['src/providers/**/*.ts', 'src/views/**/*.ts', 'src/decorations/**/*.ts'],
+            rules: {
+                'no-restricted-imports': ['error', { patterns: ['../db/*', './db/*', '../../db/*'] }],
+            },
+        },
+    ],
 };

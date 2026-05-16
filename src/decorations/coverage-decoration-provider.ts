@@ -1,263 +1,161 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
-import { DatabaseManager } from '../providers/database-manager';
-import { PathMapper } from './path-mapper';
-import { Scope, ScopeType } from '../db/schema';
+import { CoverageSourceModel, ToggleCoverageData } from '../model/index.js';
+import { DatabaseManager } from '../providers/database-manager.js';
 
-/**
- * Line coverage information
- */
-interface LineCoverage {
-    line: number;
-    hitCount: number;
-    isCovered: boolean;
-    scopeId: number;
-    scopeName: string;
-}
+export class ToggleDecorationProvider implements vscode.Disposable {
+    private enabled = false;
+    private coverageData: ToggleCoverageData[] = [];
+    private readonly subscriptions: vscode.Disposable[] = [];
 
-/**
- * Manages source code coverage decorations
- */
-export class CoverageDecorationProvider {
-    private coveredDecorationType: vscode.TextEditorDecorationType;
-    private uncoveredDecorationType: vscode.TextEditorDecorationType;
-    private enabled: boolean = false;
-    private pathMapper: PathMapper;
-    private fileDecorations = new Map<string, LineCoverage[]>();
+    private readonly bothCovered: vscode.TextEditorDecorationType;
+    private readonly oneCovered: vscode.TextEditorDecorationType;
+    private readonly notCovered: vscode.TextEditorDecorationType;
 
-    constructor(
-        private manager: DatabaseManager,
-        private context: vscode.ExtensionContext
-    ) {
-        this.pathMapper = new PathMapper();
-        
-        // Create decoration types with simple styles
-        this.coveredDecorationType = vscode.window.createTextEditorDecorationType({
-            isWholeLine: false,
-            backgroundColor: 'rgba(0, 255, 0, 0.1)',
+    constructor(private readonly manager: DatabaseManager) {
+        this.bothCovered = vscode.window.createTextEditorDecorationType({
             overviewRulerColor: 'green',
-            overviewRulerLane: vscode.OverviewRulerLane.Left
+            overviewRulerLane: vscode.OverviewRulerLane.Left,
+            isWholeLine: true,
+            backgroundColor: new vscode.ThemeColor('diffEditor.insertedLineBackground'),
         });
-
-        this.uncoveredDecorationType = vscode.window.createTextEditorDecorationType({
-            isWholeLine: false,
-            backgroundColor: 'rgba(255, 0, 0, 0.1)',
+        this.oneCovered = vscode.window.createTextEditorDecorationType({
+            overviewRulerColor: 'yellow',
+            overviewRulerLane: vscode.OverviewRulerLane.Left,
+            isWholeLine: true,
+            backgroundColor: 'rgba(255, 215, 0, 0.12)',
+        });
+        this.notCovered = vscode.window.createTextEditorDecorationType({
             overviewRulerColor: 'red',
-            overviewRulerLane: vscode.OverviewRulerLane.Left
+            overviewRulerLane: vscode.OverviewRulerLane.Left,
+            isWholeLine: true,
+            backgroundColor: new vscode.ThemeColor('diffEditor.removedLineBackground'),
         });
 
-        // Load initial state
-        const config = vscode.workspace.getConfiguration('pyucis');
+        const config = vscode.workspace.getConfiguration('covsight');
         this.enabled = config.get<boolean>('showDecorations', false);
 
-        // Register listeners
-        this.context.subscriptions.push(
-            vscode.window.onDidChangeActiveTextEditor(editor => {
-                if (editor && this.enabled) {
-                    this.updateDecorations(editor);
+        this.subscriptions.push(
+            this.manager.onActiveDatabaseChanged(() => this.refresh()),
+            vscode.window.onDidChangeActiveTextEditor((editor) => {
+                if (editor) {
+                    this.decorate(editor);
                 }
             }),
-            vscode.workspace.onDidChangeConfiguration(e => {
-                if (e.affectsConfiguration('pyucis.showDecorations')) {
-                    this.reload();
-                } else if (e.affectsConfiguration('pyucis.pathMappings')) {
-                    this.pathMapper.reload();
-                    this.refreshAll();
+            vscode.workspace.onDidOpenTextDocument(() => this.decorateAll()),
+            vscode.workspace.onDidChangeConfiguration((event) => {
+                if (event.affectsConfiguration('covsight.showDecorations')) {
+                    this.enabled = vscode.workspace.getConfiguration('covsight').get<boolean>('showDecorations', false);
+                    this.decorateAll();
+                }
+                if (event.affectsConfiguration('covsight.pathMappings')) {
+                    this.refresh();
                 }
             }),
-            this.manager.onActiveDatabaseChanged(() => {
-                if (this.enabled) {
-                    this.refreshAll();
-                }
-            }),
-            this.coveredDecorationType,
-            this.uncoveredDecorationType
         );
+
+        this.refresh();
     }
 
-    /**
-     * Enable decorations
-     */
+    toggle(): void {
+        this.enabled = !this.enabled;
+        this.decorateAll();
+    }
+
     enable(): void {
         this.enabled = true;
-        this.refreshAll();
+        this.decorateAll();
     }
 
-    /**
-     * Disable decorations
-     */
     disable(): void {
         this.enabled = false;
         this.clearAll();
     }
 
-    /**
-     * Toggle decorations
-     */
-    toggle(): void {
-        if (this.enabled) {
-            this.disable();
-        } else {
-            this.enable();
-        }
-    }
-
-    /**
-     * Check if decorations are enabled
-     */
     isEnabled(): boolean {
         return this.enabled;
     }
 
-    /**
-     * Reload configuration and refresh
-     */
-    private reload(): void {
-        const config = vscode.workspace.getConfiguration('pyucis');
-        this.enabled = config.get<boolean>('showDecorations', false);
-        
+    private refresh(): void {
+        const ucis = this.manager.getActiveDatabase();
+        if (ucis) {
+            const sourceModel = new CoverageSourceModel(this.manager.getPathMapper());
+            this.coverageData = sourceModel.buildToggleCoverages(ucis);
+        } else {
+            this.coverageData = [];
+        }
+
         if (this.enabled) {
-            this.refreshAll();
+            this.decorateAll();
         } else {
             this.clearAll();
         }
     }
 
-    /**
-     * Refresh all visible editors
-     */
-    refreshAll(): void {
-        this.fileDecorations.clear();
-        
+    private decorateAll(): void {
         for (const editor of vscode.window.visibleTextEditors) {
-            this.updateDecorations(editor);
+            this.decorate(editor);
         }
     }
 
-    /**
-     * Clear all decorations
-     */
     private clearAll(): void {
         for (const editor of vscode.window.visibleTextEditors) {
-            editor.setDecorations(this.coveredDecorationType, []);
-            editor.setDecorations(this.uncoveredDecorationType, []);
+            this.clearEditor(editor);
         }
     }
 
-    /**
-     * Update decorations for an editor
-     */
-    private async updateDecorations(editor: vscode.TextEditor): Promise<void> {
+    private clearEditor(editor: vscode.TextEditor): void {
+        editor.setDecorations(this.bothCovered, []);
+        editor.setDecorations(this.oneCovered, []);
+        editor.setDecorations(this.notCovered, []);
+    }
+
+    private decorate(editor: vscode.TextEditor): void {
         if (!this.enabled) {
+            this.clearEditor(editor);
             return;
         }
 
-        const queries = this.manager.getActiveQueries();
-        if (!queries) {
+        const filePath = path.normalize(editor.document.uri.fsPath);
+        const toggleData = this.coverageData.find((data) => path.normalize(data.workspacePath) === filePath);
+
+        if (!toggleData) {
+            this.clearEditor(editor);
             return;
         }
 
-        const fileUri = editor.document.uri;
-        const filePath = fileUri.fsPath;
+        const both: vscode.DecorationOptions[] = [];
+        const one: vscode.DecorationOptions[] = [];
+        const none: vscode.DecorationOptions[] = [];
 
-        // Get or compute coverage for this file
-        let coverage = this.fileDecorations.get(filePath);
-        if (!coverage) {
-            coverage = await this.computeFileCoverage(fileUri);
-            this.fileDecorations.set(filePath, coverage);
-        }
+        for (const [line, data] of toggleData.toggleLines) {
+            const range = new vscode.Range(line - 1, 0, line - 1, 0);
+            const hasZeroToOne = data.zeroToOne > 0n;
+            const hasOneToZero = data.oneToZero > 0n;
+            const hoverMessage = new vscode.MarkdownString(
+                `0→1: **${data.zeroToOne.toString()}**  \
+1→0: **${data.oneToZero.toString()}**`,
+            );
+            const decoration: vscode.DecorationOptions = { range, hoverMessage };
 
-        // Create decorations
-        const coveredRanges: vscode.DecorationOptions[] = [];
-        const uncoveredRanges: vscode.DecorationOptions[] = [];
-
-        for (const lineCov of coverage) {
-            const lineIndex = lineCov.line - 1; // Convert to 0-based
-            if (lineIndex < 0 || lineIndex >= editor.document.lineCount) {
-                continue;
-            }
-
-            const line = editor.document.lineAt(lineIndex);
-            const range = line.range;
-
-            const hoverMessage = new vscode.MarkdownString();
-            hoverMessage.appendMarkdown(`**${lineCov.scopeName}**\n\n`);
-            hoverMessage.appendMarkdown(`Hit Count: **${lineCov.hitCount}**\n\n`);
-            hoverMessage.appendMarkdown(lineCov.isCovered ? '✓ Covered' : '✗ Uncovered');
-
-            const decoration: vscode.DecorationOptions = {
-                range,
-                hoverMessage
-            };
-
-            if (lineCov.isCovered) {
-                coveredRanges.push(decoration);
+            if (hasZeroToOne && hasOneToZero) {
+                both.push(decoration);
+            } else if (hasZeroToOne || hasOneToZero) {
+                one.push(decoration);
             } else {
-                uncoveredRanges.push(decoration);
+                none.push(decoration);
             }
         }
 
-        editor.setDecorations(this.coveredDecorationType, coveredRanges);
-        editor.setDecorations(this.uncoveredDecorationType, uncoveredRanges);
+        editor.setDecorations(this.bothCovered, both);
+        editor.setDecorations(this.oneCovered, one);
+        editor.setDecorations(this.notCovered, none);
     }
 
-    /**
-     * Compute coverage for a file
-     */
-    private async computeFileCoverage(fileUri: vscode.Uri): Promise<LineCoverage[]> {
-        const queries = this.manager.getActiveQueries();
-        if (!queries) {
-            return [];
-        }
-
-        const coverage: LineCoverage[] = [];
-
-        // Get all scopes with source references
-        const rootScopes = queries.getRootScopes();
-        const allScopes: Scope[] = [...rootScopes];
-
-        // Recursively collect all scopes
-        const collectScopes = (scopeId: number) => {
-            const children = queries.getChildScopes(scopeId);
-            for (const child of children) {
-                allScopes.push(child);
-                collectScopes(child.scope_id);
-            }
-        };
-
-        for (const root of rootScopes) {
-            collectScopes(root.scope_id);
-        }
-
-        // Find scopes that reference this file
-        for (const scope of allScopes) {
-            if (scope.source_file_id !== null && scope.source_line !== null) {
-                const fileRef = queries.getFile(scope.source_file_id);
-                if (fileRef) {
-                    const scopeUri = this.pathMapper.resolve(fileRef.file_path);
-                    if (scopeUri && scopeUri.fsPath === fileUri.fsPath) {
-                        // This scope references our file
-                        // For code coverage (branch, toggle, etc.), get bins
-                        if (scope.scope_type === ScopeType.BRANCH ||
-                            scope.scope_type === ScopeType.TOGGLE ||
-                            scope.scope_type === ScopeType.EXPRESSION) {
-                            
-                            const bins = queries.getCoverItems(scope.scope_id);
-                            const hitCount = bins.reduce((sum, bin) => sum + bin.cover_data, 0);
-                            const isCovered = bins.some(bin => bin.cover_data > 0);
-
-                            coverage.push({
-                                line: scope.source_line,
-                                hitCount,
-                                isCovered,
-                                scopeId: scope.scope_id,
-                                scopeName: scope.scope_name
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
-        return coverage;
+    dispose(): void {
+        this.subscriptions.forEach((subscription) => subscription.dispose());
+        this.bothCovered.dispose();
+        this.oneCovered.dispose();
+        this.notCovered.dispose();
     }
 }

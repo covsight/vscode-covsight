@@ -1,0 +1,36 @@
+<!--
+  covsight icon 16×16 — minimal: 1 pin nub per side, 3 solid bars (no track)
+  At 16 px, track backgrounds become noise; solid fills read more clearly.
+  Chip body: x=2 y=2 w=12 h=9
+  Bars h=2 pitch=2.5  y: 3, 5.5, 8   fill x: 3–13 (w=10)
+  Fills: green 90%=9px  amber 72%=7px  red 42%=4px
+-->
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 16 16" width="16" height="16">
+  <defs>
+    <clipPath id="cc16">
+      <rect x="2.5" y="2.5" width="11" height="8" rx="0.75"/>
+    </clipPath>
+  </defs>
+
+  <rect width="16" height="16" rx="2" fill="#0a192f"/>
+
+  <!-- Chip body -->
+  <rect x="2" y="2" width="12" height="9" rx="1"
+        fill="#0d2240" stroke="#4a8aaa" stroke-width="0.75"/>
+
+  <!-- Single pin nub per side (centre) -->
+  <line x1="8"  y1="2"  x2="8"  y2="0.5"  stroke="#4a8aaa" stroke-width="1" stroke-linecap="round"/>
+  <line x1="8"  y1="11" x2="8"  y2="12.5" stroke="#4a8aaa" stroke-width="1" stroke-linecap="round"/>
+  <line x1="2"  y1="6.5" x2="0.5" y2="6.5" stroke="#4a8aaa" stroke-width="1" stroke-linecap="round"/>
+  <line x1="14" y1="6.5" x2="15.5" y2="6.5" stroke="#4a8aaa" stroke-width="1" stroke-linecap="round"/>
+
+  <!-- Bar 1 — green (no dark track at this size) -->
+  <rect x="3" y="3"   width="9" height="2" rx="1" fill="#22c55e" clip-path="url(#cc16)"/>
+
+  <!-- Bar 2 — amber -->
+  <rect x="3" y="5.5" width="7" height="2" rx="1" fill="#f59e0b" clip-path="url(#cc16)"/>
+
+  <!-- Bar 3 — red -->
+  <rect x="3" y="8"   width="4" height="2" rx="1" fill="#ef4444" clip-path="url(#cc16)"/>
+</svg>

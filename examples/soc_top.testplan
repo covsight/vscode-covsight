@@ -1,0 +1,202 @@
+name: SoC Top-Level Bring-Up Testplan
+description: >
+  Early bring-up verification testplan for soc_top.
+  This plan tracks the staged bringup of the CPU core, memory controller,
+  and DMA engine subsystems.  Coverage targets are intentionally aggressive —
+  most testpoints are still planned or in-progress, reflecting the early
+  stage of the project.
+format_version: "1.0"
+
+goals:
+
+  - name: CPU Core
+    description: Verify instruction fetch, decode, and execute for all ISA opcodes
+    owner: cpu-team
+    status: in_progress
+
+    goals:
+
+      - name: Basic Instruction Set
+        description: Cover the core load/store and arithmetic instructions
+        owner: cpu-team
+        status: in_progress
+
+        testpoints:
+
+          - name: load_store_instructions
+            description: >
+              LOAD and STORE instructions must be exercised with a range of
+              addresses hitting different memory regions (SRAM, peripheral space).
+            priority: high
+            status: in_progress
+            tests:
+              - soc_power_on
+              - cpu_load_store_basic
+            coverage:
+              - type: coverpoint
+                path: cpu_core.instr_cg.instruction
+
+          - name: alu_instructions
+            description: >
+              ADD (and other arithmetic ops added later) must be exercised
+              with representative operands.
+            priority: high
+            status: in_progress
+            tests:
+              - cpu_alu_basic
+            coverage:
+              - type: coverpoint
+                path: cpu_core.instr_cg.instruction
+
+      - name: Control Flow
+        description: Branches, jumps, calls, and returns
+        owner: cpu-team
+        status: planned
+
+        testpoints:
+
+          - name: branch_instructions
+            description: >
+              Taken and not-taken branches must be exercised, including
+              backward branches (loops) and forward branches (if/else).
+            priority: high
+            status: planned
+            tests:
+              - cpu_branch_test
+            coverage:
+              - type: coverpoint
+                path: cpu_core.instr_cg.instruction
+
+          - name: call_return
+            description: >
+              CALL/RET pairs must be exercised at two levels of nesting to
+              verify stack operation.
+            priority: high
+            status: planned
+            tests:
+              - cpu_call_return_test
+            coverage:
+              - type: coverpoint
+                path: cpu_core.instr_cg.instruction
+
+      - name: Interrupts
+        description: IRQ handling and acknowledgement
+        owner: cpu-team
+        status: planned
+
+        testpoints:
+
+          - name: irq_handling
+            description: >
+              An external interrupt must be asserted while the CPU is in a
+              tight loop; the ISR must execute and return, and ACK must toggle.
+            priority: high
+            status: planned
+            tests:
+              - cpu_irq_test
+            coverage:
+              - type: coverpoint
+                path: cpu_core.instr_cg.instruction
+              - type: covergroup
+                path: cpu_core
+
+  - name: Memory Controller
+    description: Verify single and burst accesses; error injection
+    owner: mem-team
+    status: in_progress
+
+    testpoints:
+
+      - name: single_read_write
+        description: >
+          Single-beat READ and WRITE transactions must complete successfully
+          with correct data.
+        priority: high
+        status: in_progress
+        tests:
+          - soc_power_on
+          - mem_single_access
+        coverage:
+          - type: coverpoint
+            path: mem_ctrl.access_cg.access_type
+
+      - name: burst_access
+        description: >
+          BURST_READ and BURST_WR must be exercised with burst lengths of
+          4, 8, and 16 beats.
+        priority: high
+        status: planned
+        tests:
+          - mem_burst_test
+        coverage:
+          - type: coverpoint
+            path: mem_ctrl.access_cg.access_type
+
+      - name: dram_refresh
+        description: >
+          The DRAM refresh cycle must be observed at least once during
+          a long-running test.
+        priority: medium
+        status: planned
+        tests:
+          - mem_long_run
+        coverage:
+          - type: coverpoint
+            path: mem_ctrl.access_cg.access_type
+
+  - name: DMA Engine
+    description: >
+      Verify DMA transfer initiation, progress, and completion across all
+      supported transfer widths and sizes.
+    owner: dma-team
+    status: planned
+
+    testpoints:
+
+      - name: byte_transfer
+        description: >
+          A byte-width DMA transfer must complete with correct data and
+          the done flag must assert.
+        priority: high
+        status: in_progress
+        tests:
+          - soc_power_on
+        coverage:
+          - type: coverpoint
+            path: dma_engine.xfer_cg.transfer_size
+
+      - name: wider_transfers
+        description: >
+          Half-word, word, and double-word DMA transfers must complete
+          correctly.
+        priority: high
+        status: planned
+        tests:
+          - dma_width_test
+        coverage:
+          - type: coverpoint
+            path: dma_engine.xfer_cg.transfer_size
+
+      - name: burst_dma
+        description: >
+          Burst-8 DMA must be exercised with source and destination in
+          different memory regions.
+        priority: medium
+        status: planned
+        tests:
+          - dma_burst_test
+        coverage:
+          - type: coverpoint
+            path: dma_engine.xfer_cg.transfer_size
+
+      - name: dma_signal_toggles
+        description: >
+          DMA req, grant, done, and err signals must all toggle to confirm
+          the bus-arbitration handshake is operational.
+        priority: medium
+        status: planned
+        tests:
+          - dma_basic_test
+        coverage:
+          - type: covergroup
+            path: dma_engine

@@ -17,7 +17,7 @@ export class DatabaseDiscovery {
      * Start watching for database files
      */
     async activate(): Promise<void> {
-        const config = vscode.workspace.getConfiguration('pyucis');
+        const config = vscode.workspace.getConfiguration('covsight');
         const autoDetect = config.get<boolean>('autoDetect', true);
 
         if (!autoDetect) {
@@ -47,7 +47,7 @@ export class DatabaseDiscovery {
      * Scan workspace for database files
      */
     async scanWorkspace(): Promise<void> {
-        const config = vscode.workspace.getConfiguration('pyucis');
+        const config = vscode.workspace.getConfiguration('covsight');
         const patterns = config.get<string[]>('filePatterns', ['**/*.cdb']);
 
         console.log('Scanning workspace for databases with patterns:', patterns);
@@ -74,7 +74,7 @@ export class DatabaseDiscovery {
      * Setup file system watcher
      */
     private setupWatcher(): void {
-        const config = vscode.workspace.getConfiguration('pyucis');
+        const config = vscode.workspace.getConfiguration('covsight');
         const patterns = config.get<string[]>('filePatterns', ['**/*.cdb']);
 
         // Watch for .cdb files
