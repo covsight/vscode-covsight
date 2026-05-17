@@ -160,25 +160,28 @@
         "title": "CovSight: Show Testpoint Detail"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "covsight",
+          "title": "CovSight",
+          "icon": "media/covsight-icon-32.svg"
+        }
+      ]
+    },
     "views": {
-      "explorer": [
+      "covsight": [
         {
           "id": "covsight.databases",
-          "name": "Coverage Databases",
-          "icon": "media/covsight-icon-16.svg",
-          "contextualTitle": "CovSight"
+          "name": "Coverage Databases"
         },
         {
           "id": "covsight.coverage",
-          "name": "Coverage Hierarchy",
-          "icon": "media/covsight-icon-16.svg",
-          "contextualTitle": "CovSight"
+          "name": "Coverage Hierarchy"
         },
         {
           "id": "covsight.testplan",
-          "name": "Testplan",
-          "icon": "media/covsight-icon-16.svg",
-          "contextualTitle": "CovSight"
+          "name": "Testplan"
         }
       ]
     },
