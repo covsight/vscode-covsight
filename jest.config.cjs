@@ -3,7 +3,13 @@ module.exports = {
   transform: {
     '^.+\\.ts$': ['ts-jest', {
       useESM: true,
-      tsconfig: { module: 'ES2022', moduleResolution: 'bundler' },
+      tsconfig: {
+        module: 'ES2022',
+        moduleResolution: 'bundler',
+        paths: {
+          '@covsight/core': ['./packages/covsight-core/ts/dist/index.d.ts'],
+        },
+      },
     }],
   },
   testEnvironment: 'node',
@@ -12,7 +18,8 @@ module.exports = {
     '**/src/views/html/**/*.test.ts',
   ],
   moduleNameMapper: {
-    '^@covsight/core(.*)$': '<rootDir>/packages/covsight-core/ts/dist$1/index.js',
+    '^@covsight/core$': '<rootDir>/packages/covsight-core/ts/dist/index.js',
+    '^@covsight/core/(.*)$': '<rootDir>/packages/covsight-core/ts/dist/$1/index.js',
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
   coverageThreshold: {
