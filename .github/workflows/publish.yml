@@ -35,7 +35,6 @@ jobs:
       - name: Build covsight-core
         run: |
           cd packages/covsight-core/ts
-          git checkout a75ad13c5ee6bf19dde28284ebf1513b72f10763
           npm ci
           npm run build
 
