@@ -30,7 +30,7 @@ jobs:
         run: pip install ivpm
 
       - name: Fetch dependencies (covsight-core)
-        run: python3 -m ivpm update -d default-dev --skip-py-install
+        run: python3 -m ivpm update -d default-dev --skip-py-install --anonymous-git
 
       - name: Install npm dependencies
         run: npm ci
